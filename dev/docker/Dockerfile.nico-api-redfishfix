@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+#
+# One-off builder for carbide-api (nico-api) with vendored libredfish Dell iDRAC
+# fixes (Controllers {} parse + boot-option DisplayName prefix match).
+# Build from v0.10.3-redfishfix branch. Set RUNTIME_IMAGE to your v0.10.3 deploy image.
+
+FROM rust:1.95.0-slim-bookworm AS builder
+
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+# Drop debuginfo to keep the binary small and the build light; behavior unchanged.
+ENV CARGO_PROFILE_DEV_DEBUG=0
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y --no-install-recommends \
+    build-essential clang libclang-dev cmake pkg-config lld git curl ca-certificates \
+    libssl-dev libudev-dev libssh-dev libtss2-dev libaio-dev libopenipmi-dev openipmi \
+    libprotobuf-dev protobuf-compiler protobuf-compiler-grpc libgrpc-dev libgrpc++-dev libboost-dev \
+    kea-dev kea-dhcp4-server \
+ && rm -rf /var/lib/apt/lists/*
+
+# ld OOMs on this workspace; use lld.
+RUN update-alternatives --install /usr/bin/ld ld /usr/bin/lld 50
+
+WORKDIR /workspace
+COPY . .
+
+# No --locked: the [patch] for libredfish updates Cargo.lock.
+RUN cargo build -p carbide-api && cp target/debug/carbide-api /carbide-api
+
+ARG RUNTIME_IMAGE=subashaarna/nvmetal-carbide:june18
+FROM ${RUNTIME_IMAGE}
+COPY --from=builder /carbide-api /opt/carbide/carbide-api

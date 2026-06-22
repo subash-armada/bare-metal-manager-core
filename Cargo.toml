@@ -268,3 +268,11 @@ cloned_instead_of_copied = "warn"
 redundant_clone = "warn"
 large_stack_arrays = "warn"
 unused_async = "warn"
+
+# Local fork of libredfish carrying Dell iDRAC fixes:
+# - Tolerate empty NetworkAdapter `Controllers` as `{}` instead of `[]`
+#   (vendor/libredfish/src/model/chassis.rs)
+# - Prefix-match HTTP boot option DisplayName suffix from iDRAC firmware
+#   (vendor/libredfish/src/dell.rs boot_option_name_matches)
+[patch."https://github.com/NVIDIA/libredfish.git"]
+libredfish = { path = "vendor/libredfish" }
