@@ -48,8 +48,20 @@ done
 
 cd "$REPO_ROOT"
 
-# PKG_VERSION comes from git describe; broken/partial .git yields invalid "0.0.0-" deb versions.
-PKG_VERSION="${PKG_VERSION:-0.0.0-${TAG}}"
+# PKG_VERSION must match the .deb names cargo-make produces. Prefer git describe;
+# fall back to 0.0.0-${TAG} only when .git is broken (empty describe → invalid "0.0.0-").
+resolve_pkg_version() {
+  local v
+  v="$(git describe --tags --first-parent --always --long 2>/dev/null | sed 's/^v//')"
+  if [[ -z "$v" ]]; then
+    echo "0.0.0-${TAG}"
+  elif [[ "$v" =~ ^[0-9] ]]; then
+    echo "$v"
+  else
+    echo "0.0.0-$v"
+  fi
+}
+PKG_VERSION="${PKG_VERSION:-$(resolve_pkg_version)}"
 export VERSION="${VERSION:-${TAG}}"
 export PKG_VERSION
 
