@@ -39,8 +39,8 @@ use libredfish::model::task::Task;
 use libredfish::model::update_service::{ComponentType, TransferProtocolType, UpdateService};
 use libredfish::model::{ODataId, ODataLinks};
 use libredfish::{
-    Assembly, Chassis, Collection, EnabledDisabled, JobState, NetworkAdapter, PowerState, Redfish,
-    RedfishError, Resource, SystemPowerControl,
+    Assembly, BootInterfaceRef, Chassis, Collection, EnabledDisabled, JobState, NetworkAdapter,
+    PowerState, Redfish, RedfishError, Resource, SystemPowerControl,
 };
 use mac_address::MacAddress;
 use sqlx::PgPool;
@@ -277,7 +277,7 @@ impl Redfish for RedfishSimClient {
 
     fn machine_setup<'a>(
         &'a self,
-        _boot_interface_mac: Option<&'a str>,
+        _boot_interface: Option<BootInterfaceRef<'a>>,
         _bios_profiles: &'a HashMap<
             libredfish::model::service_root::RedfishVendor,
             HashMap<
@@ -306,7 +306,7 @@ impl Redfish for RedfishSimClient {
 
     fn machine_setup_status<'a>(
         &'a self,
-        _boot_interface_mac: Option<&'a str>,
+        _boot_interface: Option<BootInterfaceRef<'a>>,
     ) -> libredfish::RedfishFuture<'a, Result<libredfish::MachineSetupStatus, RedfishError>> {
         Box::pin(async move {
             Ok(libredfish::MachineSetupStatus {
@@ -1162,15 +1162,19 @@ impl Redfish for RedfishSimClient {
 
     fn set_boot_order_dpu_first<'a>(
         &'a self,
-        mac_address: &'a str,
+        boot_interface: BootInterfaceRef<'a>,
     ) -> libredfish::RedfishFuture<'a, Result<Option<String>, RedfishError>> {
         Box::pin(async move {
+            let boot_interface_mac = match boot_interface {
+                BootInterfaceRef::Mac(mac) => mac.to_string(),
+                BootInterfaceRef::InterfaceId(id) => id.to_string(),
+            };
             let mut state = self.state.lock().unwrap();
             let host_state = state.hosts.get_mut(&self._host).unwrap();
             host_state
                 .actions
                 .push(RedfishSimAction::SetBootOrderDpuFirst {
-                    boot_interface_mac: mac_address.to_string(),
+                    boot_interface_mac,
                 });
             Ok(None)
         })
@@ -1338,13 +1342,17 @@ impl Redfish for RedfishSimClient {
 
     fn is_boot_order_setup<'a>(
         &'a self,
-        boot_interface_mac: &'a str,
+        boot_interface: BootInterfaceRef<'a>,
     ) -> libredfish::RedfishFuture<'a, Result<bool, RedfishError>> {
         Box::pin(async move {
+            let boot_interface_mac = match boot_interface {
+                BootInterfaceRef::Mac(mac) => mac.to_string(),
+                BootInterfaceRef::InterfaceId(id) => id.to_string(),
+            };
             let mut state = self.state.lock().unwrap();
             let host_state = state.hosts.get_mut(&self._host).unwrap();
             host_state.actions.push(RedfishSimAction::IsBootOrderSetup {
-                boot_interface_mac: boot_interface_mac.to_string(),
+                boot_interface_mac,
             });
             Ok(true)
         })
@@ -1352,7 +1360,7 @@ impl Redfish for RedfishSimClient {
 
     fn is_bios_setup<'a>(
         &'a self,
-        _: Option<&'a str>,
+        _: Option<BootInterfaceRef<'a>>,
     ) -> libredfish::RedfishFuture<'a, Result<bool, RedfishError>> {
         Box::pin(async move { Ok(true) })
     }
@@ -1719,6 +1727,13 @@ impl Redfish for RedfishSimClient {
                 .push(RedfishSimAction::SetUtcTimezone);
             Ok(())
         })
+    }
+
+    fn set_ntp_servers<'a>(
+        &'a self,
+        _servers: &'a [String],
+    ) -> libredfish::RedfishFuture<'a, Result<(), RedfishError>> {
+        Box::pin(async move { Ok(()) })
     }
 }
 
