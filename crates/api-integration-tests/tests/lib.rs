@@ -897,6 +897,8 @@ where
                 dpus_in_nic_mode,
                 dpu_firmware_versions: None,
                 dpu_agent_version: None,
+                cisco_product: None,
+                cisco_gpu_profile: None,
             }),
         )]),
         carbide_api_url: format!("https://{}:{}", api_addr.ip(), api_addr.port()),
