@@ -17,7 +17,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use base64::prelude::*;
-use bmc_mock::{DUMMY_FACTORY_PASSWORD, DUMMY_FACTORY_USERNAME, MachineInfo};
+use bmc_mock::{DUMMY_FACTORY_PASSWORD, DUMMY_FACTORY_USERNAME, HostMachineInfo, MachineInfo};
 use carbide_uuid::instance::InstanceId;
 use carbide_uuid::machine::{MachineId, MachineInterfaceId};
 use carbide_uuid::machine_validation::MachineValidationId;
@@ -25,8 +25,9 @@ use mac_address::MacAddress;
 use rpc::forge::instance_operating_system_config::Variant;
 use rpc::forge::machine_cleanup_info::CleanupStepResult;
 use rpc::forge::{
-    ConfigSetting, ExpectedMachine, InlineIpxe, InstanceOperatingSystemConfig,
-    MachinesByIdsRequest, PxeInstructions, SetDynamicConfigRequest, VpcVirtualizationType,
+    ConfigSetting, DpuMode, ExpectedHostNic, ExpectedMachine, ExpectedMachineRequest,
+    HostLifecycleProfile, InlineIpxe, InstanceOperatingSystemConfig, MachinesByIdsRequest,
+    PxeInstructions, SetDynamicConfigRequest, VpcVirtualizationType,
 };
 use rpc::protos::forge_api_client::ForgeApiClient;
 
@@ -499,35 +500,103 @@ impl ApiClient {
             .map_err(ClientApiError::InvocationError)
     }
 
-    /// Registers a mock expected machine. Static BMC (`bmc_ip_address`) is left unset here;
-    /// real environments set it through the admin CLI / API when DHCP discovery is not used.
-    pub async fn add_expected_machine(
-        &self,
-        bmc_mac_address: String,
-        chassis_serial_number: String,
-    ) -> ClientApiResult<()> {
-        self.0
-            .add_expected_machine(ExpectedMachine {
-                bmc_mac_address,
-                bmc_username: DUMMY_FACTORY_USERNAME.to_string(),
-                bmc_password: DUMMY_FACTORY_PASSWORD.to_string(),
-                chassis_serial_number,
-                fallback_dpu_serial_numbers: Vec::new(),
-                metadata: None,
-                sku_id: None,
-                id: None,
-                host_nics: vec![],
-                rack_id: None,
-                default_pause_ingestion_and_poweron: None,
-                #[allow(deprecated)]
-                dpf_enabled: true,
-                is_dpf_enabled: Some(true),
-                bmc_ip_address: None,
-                bmc_retain_credentials: None,
-                dpu_mode: None,
-                host_lifecycle_profile: None,
+    fn expected_machine_from_host(host: &HostMachineInfo) -> ExpectedMachine {
+        let is_zero_dpu = host.dpus.is_empty();
+        let host_nics = host
+            .non_dpu_mac_address
+            .iter()
+            .map(|mac| ExpectedHostNic {
+                mac_address: mac.to_string(),
+                // Zero-DPU host PXE uses host_inband relay lookup; "onboard" forces Admin segment.
+                nic_type: if is_zero_dpu {
+                    None
+                } else {
+                    Some("onboard".into())
+                },
+                fixed_ip: None,
+                fixed_mask: None,
+                fixed_gateway: None,
+                primary: Some(true),
             })
-            .await
-            .map_err(ClientApiError::InvocationError)
+            .collect();
+
+        ExpectedMachine {
+            bmc_mac_address: host.bmc_mac_address.to_string(),
+            bmc_username: DUMMY_FACTORY_USERNAME.to_string(),
+            bmc_password: DUMMY_FACTORY_PASSWORD.to_string(),
+            chassis_serial_number: host.serial.clone(),
+            fallback_dpu_serial_numbers: Vec::new(),
+            metadata: None,
+            sku_id: None,
+            id: None,
+            host_nics,
+            rack_id: None,
+            default_pause_ingestion_and_poweron: None,
+            #[allow(deprecated)]
+            dpf_enabled: true,
+            is_dpf_enabled: Some(true),
+            bmc_ip_address: None,
+            bmc_retain_credentials: None,
+            dpu_mode: if is_zero_dpu {
+                Some(DpuMode::NoDpu as i32)
+            } else {
+                None
+            },
+            host_lifecycle_profile: if is_zero_dpu {
+                Some(HostLifecycleProfile {
+                    disable_lockdown: Some(true),
+                })
+            } else {
+                None
+            },
+        }
+    }
+
+    /// Registers a mock expected machine, including zero-DPU boot NIC metadata.
+    ///
+    /// Static BMC (`bmc_ip_address`) is left unset; real environments set it through the
+    /// admin CLI / API when DHCP discovery is not used.
+    ///
+    /// If the BMC MAC is already registered (e.g. from a prior MAT run), merges in
+    /// `host_nics`, `dpu_mode`, and `host_lifecycle_profile` when those are missing.
+    pub async fn register_expected_machine(&self, host: &HostMachineInfo) -> ClientApiResult<()> {
+        let desired = Self::expected_machine_from_host(host);
+        match self.0.add_expected_machine(desired.clone()).await {
+            Ok(()) => Ok(()),
+            Err(status)
+                if status.code() == tonic::Code::FailedPrecondition
+                    || status.code() == tonic::Code::AlreadyExists =>
+            {
+                let request = ExpectedMachineRequest {
+                    bmc_mac_address: desired.bmc_mac_address.clone(),
+                    id: None,
+                };
+                let mut existing = self
+                    .0
+                    .get_expected_machine(request)
+                    .await
+                    .map_err(ClientApiError::InvocationError)?;
+                if existing.host_nics.is_empty() && !desired.host_nics.is_empty() {
+                    existing.host_nics = desired.host_nics;
+                }
+                if existing.dpu_mode.unwrap_or(DpuMode::Unspecified as i32)
+                    == DpuMode::Unspecified as i32
+                    && desired.dpu_mode.is_some()
+                {
+                    existing.dpu_mode = desired.dpu_mode;
+                }
+                if existing.host_lifecycle_profile.is_none()
+                    && desired.host_lifecycle_profile.is_some()
+                {
+                    existing.host_lifecycle_profile = desired.host_lifecycle_profile;
+                }
+                self.0
+                    .update_expected_machine(existing)
+                    .await
+                    .map_err(ClientApiError::InvocationError)?;
+                Ok(())
+            }
+            Err(status) => Err(ClientApiError::InvocationError(status)),
+        }
     }
 }

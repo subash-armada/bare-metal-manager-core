@@ -115,21 +115,23 @@ ok "TLS certificates ready"
 if docker ps --format '{{.Names}}' | grep -w "$PG_CONTAINER" >/dev/null; then
   ok "Postgres already running"
 else
-  CERTS_DIR="$REPO_ROOT/dev/certs/localhost"
   info "Starting Postgres..."
+  docker rm -f "$PG_CONTAINER" 2>/dev/null || true
   docker run --rm --detach --name "$PG_CONTAINER" \
     -e POSTGRES_PASSWORD="admin" \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
-    -v "$CERTS_DIR/localhost.crt:/var/lib/postgresql/server.crt:ro" \
-    -v "$CERTS_DIR/localhost.key:/var/lib/postgresql/server.key:ro" \
     -p 5432:5432 \
     postgres:14.5-alpine \
-    -c ssl=on \
-    -c ssl_cert_file=/var/lib/postgresql/server.crt \
-    -c ssl_key_file=/var/lib/postgresql/server.key \
     -c max_connections=300 >/dev/null 2>&1 || die "Failed to start postgres"
 
-  sleep 2
+  for _ in $(seq 1 30); do
+    if docker exec "$PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  docker exec "$PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1 \
+    || die "Postgres failed to become ready (check: docker logs $PG_CONTAINER)"
   ok "Postgres started"
 fi
 
@@ -137,7 +139,9 @@ fi
 # Environment
 # -----------------------------------------------------------------------------
 export CARBIDE_WEB_AUTH_TYPE="${CARBIDE_WEB_AUTH_TYPE:-none}"
-export DATABASE_URL="postgresql://postgres:admin@localhost"
+export DATABASE_URL="postgresql://postgres:admin@localhost?sslmode=disable"
+# Local Postgres runs without TLS; [tls] in site config otherwise forces sslmode=require.
+export DISABLE_TLS_ENFORCEMENT=1
 export VAULT_ADDR="$VAULT_ADDR"
 # Vault runs without TLS in local dev (HTTP). The code requires VAULT_CACERT to
 # point to an existing file; for HTTP connections the cert is never actually used.

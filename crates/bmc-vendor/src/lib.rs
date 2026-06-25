@@ -40,6 +40,7 @@ pub enum BMCVendor {
     Hpe,
     Nvidia, // DPU, Viking, Oberon
     Liteon,
+    Cisco,
     #[serde(other)]
     #[default]
     Unknown,
@@ -62,6 +63,7 @@ impl From<&str> for BMCVendor {
             "hpe" => BMCVendor::Hpe,
             "nvidia" => BMCVendor::Nvidia,
             "liteon" => BMCVendor::Liteon,
+            "cisco" => BMCVendor::Cisco,
             _ => BMCVendor::Unknown,
         }
     }
@@ -77,6 +79,7 @@ impl BMCVendor {
             "NVIDIA" => BMCVendor::Nvidia,
             "Supermicro" => BMCVendor::Supermicro,
             "HPE" => BMCVendor::Hpe,
+            "Cisco Systems Inc" => BMCVendor::Cisco,
             _ => BMCVendor::Unknown,
         }
     }
@@ -90,6 +93,7 @@ impl BMCVendor {
             "Hewlett Packard Enterprise" => BMCVendor::Hpe,
             "American Megatrends International LLC (AMI)" => BMCVendor::Nvidia,
             "OpenBMC" => BMCVendor::Nvidia,
+            "Cisco Systems Inc" => BMCVendor::Cisco,
             _ => BMCVendor::Unknown,
         }
     }
@@ -104,6 +108,7 @@ impl BMCVendor {
             BMCVendor::Hpe => "Hpe",
             BMCVendor::Nvidia => "Nvidia",
             BMCVendor::Liteon => "Liteon",
+            BMCVendor::Cisco => "Cisco",
             BMCVendor::Unknown => "Unknown",
         }
         .to_string()
@@ -134,6 +139,10 @@ impl BMCVendor {
 
     pub fn is_liteon(&self) -> bool {
         *self == Self::Liteon
+    }
+
+    pub fn is_cisco(&self) -> bool {
+        *self == Self::Cisco
     }
 
     pub fn is_unknown(&self) -> bool {

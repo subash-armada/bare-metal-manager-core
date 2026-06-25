@@ -96,7 +96,18 @@ The DevSpace images also use Dockerfile-specific ignore files: [`Dockerfile.api.
 
 DevSpace watches the Rust workspace, toolchain metadata, and the runtime Dockerfiles to decide when images need rebuilding.
 
-The production Helm chart is still only responsible for the product services. `machine-a-tron` is deployed separately as plain local-only Kubernetes objects in [`machine-a-tron.yaml`](machine-a-tron.yaml), with DevSpace wiring in the local image tag and certificate issuer from [`devspace.yaml`](../../../devspace.yaml). The local API and BMC proxy configs in [`values.base.yaml`](values.base.yaml) point BMC traffic at `machine-a-tron-bmc-mock.nico-system.svc.cluster.local:1266`.
+The production Helm chart is still only responsible for the product services. `machine-a-tron` is deployed separately as plain local-only Kubernetes objects in [`machine-a-tron.yaml`](machine-a-tron.yaml), with DevSpace wiring in the local image tag and certificate issuer from [`devspace.yaml`](../../../devspace.yaml). The local API and BMC proxy configs in [`values.base.yaml`](values.base.yaml) point BMC traffic at `machine-a-tron-bmc-mock.nico-system.svc.cluster.local:1266`. The default [`machine-a-tron.yaml`](machine-a-tron.yaml) deploys one zero-DPU Cisco UCS C845A M8 mock host (`hw_type = "cisco_ucs"`). See [`docs/provisioning/examples/cisco_c845a_expected_machines.json`](../../../docs/provisioning/examples/cisco_c845a_expected_machines.json) for expected-machine registration.
+
+### Fast binary sync (Cisco / bmc-mock iteration)
+
+To avoid slow full Docker rebuilds when iterating on `machine-a-tron` or `bmc-mock`:
+
+```bash
+dev/deployment/devspace/sync-bmc-mock-binaries.sh
+devspace dev   # or skaffold dev
+```
+
+This compiles locally, copies binaries into `.skaffold/target/`, and Skaffold sync pushes them into running pods.
 
 Common usage:
 

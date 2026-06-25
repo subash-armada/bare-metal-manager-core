@@ -22,8 +22,8 @@ use url::Url;
 
 use crate::machine_info::DpuSettings;
 use crate::{
-    BmcState, Callbacks, DpuMachineInfo, HostHardwareType, HostMachineInfo, MachineInfo,
-    MockPowerState, SetSystemPowerError, SystemPowerControl, machine_router,
+    BmcState, Callbacks, CiscoGpuProfile, DpuMachineInfo, HostHardwareType, HostMachineInfo,
+    MachineInfo, MockPowerState, SetSystemPowerError, SystemPowerControl, machine_router,
 };
 pub mod axum_http_client;
 
@@ -147,6 +147,25 @@ pub async fn generic_ami_bmc() -> TestBmcHandle {
         false,
     ))
     .await
+}
+
+pub async fn cisco_ucs_bmc(product: &str, gpu_profile: CiscoGpuProfile) -> TestBmcHandle {
+    test_bmc(machine_router(
+        MachineInfo::Host(HostMachineInfo::with_cisco_profile(
+            HostHardwareType::CiscoUcs,
+            vec![],
+            Some(product.to_string()),
+            Some(gpu_profile),
+        )),
+        Arc::new(NoopCallbacks),
+        "test-host-id".to_string(),
+        false,
+    ))
+    .await
+}
+
+pub async fn cisco_ucs_c845a_m8_bmc() -> TestBmcHandle {
+    cisco_ucs_bmc("CAI-845A-M8", CiscoGpuProfile::MgxPcie).await
 }
 
 #[cfg(test)]

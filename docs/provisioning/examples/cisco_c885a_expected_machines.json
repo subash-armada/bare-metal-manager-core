@@ -1,0 +1,12 @@
+[
+  {
+    "bmc_mac_address": "10:57:25:2c:41:2c",
+    "chassis_serial_number": "WVT301001H9",
+    "bmc_username": "admin",
+    "bmc_password": "<current-password>",
+    "dpu_mode": "no_dpu",
+    "host_lifecycle_profile": {
+      "disable_lockdown": true
+    }
+  }
+]

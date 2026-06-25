@@ -20,6 +20,7 @@ use std::fmt;
 use itertools::Itertools;
 
 pub mod bluefield;
+pub mod cisco;
 pub mod dell;
 pub mod gb200;
 pub mod hpe;
@@ -33,6 +34,7 @@ pub mod viking;
 pub enum HwType {
     Ami,
     Bluefield,
+    Cisco,
     Dell,
     Gb200,
     Hpe,
@@ -50,6 +52,7 @@ impl HwType {
         match self {
             Self::Ami => None,
             Self::Bluefield => Some(bmc_vendor::BMCVendor::Nvidia),
+            Self::Cisco => Some(bmc_vendor::BMCVendor::Cisco),
             Self::Dell => Some(bmc_vendor::BMCVendor::Dell),
             Self::Gb200 => Some(bmc_vendor::BMCVendor::Nvidia),
             Self::Hpe => Some(bmc_vendor::BMCVendor::Hpe),
@@ -67,6 +70,8 @@ impl HwType {
         match self {
             Self::Ami => Some(BiosAttr::new_str("EndlessBoot", "Enabled")),
             Self::Bluefield => None,
+            // Cisco uses Redfish Boot AutomaticRetryConfig; no BIOS infinite-boot attr.
+            Self::Cisco => None,
             Self::Dell => Some(BiosAttr::new_str("BootSeqRetry", "Enabled")),
             Self::Gb200 => Some(BiosAttr::new_str("EmbeddedUefiShell", "Disabled")),
             Self::Hpe => None,

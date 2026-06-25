@@ -114,7 +114,7 @@ pub fn add_routes(r: Router<BmcState>, bmc_vendor: redfish::oem::BmcVendor) -> R
         )
         .route(
             &bmc_vendor.make_settings_odata_id(&bios),
-            patch(patch_bios_settings),
+            get(get_bios).patch(patch_bios_settings),
         )
         .route(
             &redfish::bios::change_password_target(&bios),
@@ -155,10 +155,17 @@ pub struct BootSourceOverride {
     target: Option<String>,
 }
 
+#[derive(Default)]
+struct BootRetryConfig {
+    automatic_retry_config: Option<String>,
+    automatic_retry_attempts: Option<i32>,
+}
+
 pub struct SingleSystemState {
     config: SingleSystemConfig,
     boot_order_override: Mutex<Option<Vec<String>>>,
     boot_source_override: Mutex<BootSourceOverride>,
+    boot_retry: Mutex<BootRetryConfig>,
     secure_boot_enabled: Arc<AtomicBool>,
     bios_overrides: Arc<Mutex<serde_json::Value>>,
 }
@@ -219,6 +226,7 @@ impl SingleSystemState {
             config,
             boot_order_override: Mutex::new(None),
             boot_source_override: Mutex::new(BootSourceOverride::default()),
+            boot_retry: Mutex::new(BootRetryConfig::default()),
             secure_boot_enabled: Arc::new(AtomicBool::new(false)),
             bios_overrides: Arc::new(Mutex::new(serde_json::json!({}))),
         }
@@ -245,6 +253,31 @@ impl SingleSystemState {
 
     fn boot_order_override(&self) -> Option<Vec<String>> {
         self.boot_order_override.lock().unwrap().clone()
+    }
+
+    fn apply_boot_patch(&self, boot: &serde_json::Value) {
+        let mut boot_retry = self.boot_retry.lock().unwrap();
+        if let Some(v) = boot.get("AutomaticRetryConfig").and_then(serde_json::Value::as_str) {
+            boot_retry.automatic_retry_config = Some(v.to_string());
+        }
+        if let Some(v) = boot
+            .get("AutomaticRetryAttempts")
+            .and_then(serde_json::Value::as_i64)
+        {
+            boot_retry.automatic_retry_attempts = i32::try_from(v).ok();
+        }
+    }
+
+    fn boot_retry_patch(&self) -> Option<serde_json::Value> {
+        let boot_retry = self.boot_retry.lock().unwrap();
+        let mut boot = serde_json::Map::new();
+        if let Some(v) = &boot_retry.automatic_retry_config {
+            boot.insert("AutomaticRetryConfig".to_string(), json!(v));
+        }
+        if let Some(v) = boot_retry.automatic_retry_attempts {
+            boot.insert("AutomaticRetryAttempts".to_string(), json!(v));
+        }
+        (!boot.is_empty()).then(|| json!(boot))
     }
 
     fn resolve_current_boot_selection(&self) -> Option<BootOptionKind> {
@@ -330,6 +363,10 @@ async fn get_system(State(state): State<BmcState>, Path(system_id): Path<String>
                     .collect::<Vec<_>>(),
             );
         }
+    }
+
+    if let Some(boot_retry) = system_state.boot_retry_patch() {
+        b = b.apply_patch(json!({"Boot": boot_retry}));
     }
 
     b = match config.oem {
@@ -485,32 +522,33 @@ async fn patch_system(
     let Some(system_state) = state.system_state.find(&system_id) else {
         return http::not_found();
     };
-    if let Some(new_boot_order) = patch_system
-        .get("Boot")
-        .and_then(|obj| obj.get("BootOrder"))
-        .and_then(serde_json::Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(ToString::to_string)
-                .collect()
-        })
-    {
-        match system_state.config.boot_order_mode {
-            BootOrderMode::DellOem => {
-                system_state.set_boot_order_override(new_boot_order);
-                redfish::oem::dell::idrac::create_job_with_location(state)
-            }
-            BootOrderMode::ViaSettings => json!("Boot order setup must use Settings resource")
-                .into_response(StatusCode::BAD_REQUEST),
-            BootOrderMode::Generic => {
-                system_state.set_boot_order_override(new_boot_order);
-                json!({}).into_ok_response()
-            }
+    if let Some(boot) = patch_system.get("Boot") {
+        system_state.apply_boot_patch(boot);
+        if let Some(new_boot_order) = boot
+            .get("BootOrder")
+            .and_then(serde_json::Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(ToString::to_string)
+                    .collect()
+            })
+        {
+            return match system_state.config.boot_order_mode {
+                BootOrderMode::DellOem => {
+                    system_state.set_boot_order_override(new_boot_order);
+                    redfish::oem::dell::idrac::create_job_with_location(state)
+                }
+                BootOrderMode::ViaSettings => json!("Boot order setup must use Settings resource")
+                    .into_response(StatusCode::BAD_REQUEST),
+                BootOrderMode::Generic => {
+                    system_state.set_boot_order_override(new_boot_order);
+                    return http::ok_no_content();
+                }
+            };
         }
-    } else {
-        json!({}).into_ok_response()
     }
+    http::ok_no_content()
 }
 
 async fn post_reset_system(

@@ -22,10 +22,13 @@ data:
     persist_dir = "/tmp/machine-a-tron-data"
     register_expected_machines = true
 
-    # machine-a-tron config generated from "just setup-k3s-env-ips"
-    [machines.config]
-    host_count = 10
-    dpu_per_host_count = 2
+    # Cisco UCS C845A M8 lab: one zero-DPU mock host (see docs/provisioning/examples/cisco_c845a_expected_machines.json)
+    [machines.cisco_ucs]
+    host_count = 1
+    dpu_per_host_count = 0
+    hw_type = "cisco_ucs"
+    cisco_product = "CAI-845A-M8"
+    cisco_gpu_profile = "mgx_pcie"
     dpu_reboot_delay = 1 # in units of seconds
     host_reboot_delay = 1 # in units of seconds
     vpc_count = 0

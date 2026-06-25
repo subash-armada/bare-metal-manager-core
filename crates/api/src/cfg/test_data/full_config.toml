@@ -195,6 +195,59 @@ OperatingModes_ChooseOperatingMode = "MaximumPerformance"
 DevicesandIOPorts_IOMMU = "Disabled"
 OperatingModes_ChooseOperatingMode = "MinimalPower"
 
+[bios_profiles.Cisco.CAI-845A-M8.performance]
+NWSK000 = "Enabled"
+NWSK001 = "Enabled"
+NWSK006 = "Enabled"
+NWSK002 = "Disabled"
+NWSK007 = "Disabled"
+
+[bios_profiles.Cisco.CAI-885A-M8.performance]
+NWSK000 = "Enabled"
+NWSK001 = "Enabled"
+NWSK006 = "Enabled"
+NWSK002 = "Disabled"
+NWSK007 = "Disabled"
+
+[host_models.cisco_c845a_m8]
+vendor = "Cisco"
+model = "CAI-845A-M8"
+ordering = ["uefi", "bmc"]
+
+[host_models.cisco_c845a_m8.components.bmc]
+current_version_reported_as = ".*bmc.*"
+preingest_upgrade_when_below = "0.0"
+
+[host_models.cisco_c845a_m8.components.uefi]
+current_version_reported_as = ".*bios.*"
+preingest_upgrade_when_below = "0.0"
+
+[host_models.cisco_c885a_m8]
+vendor = "Cisco"
+model = "CAI-885A-M8"
+ordering = ["uefi", "bmc"]
+
+[host_models.cisco_c885a_m8.components.bmc]
+current_version_reported_as = ".*bmc.*"
+preingest_upgrade_when_below = "0.0"
+
+[host_models.cisco_c885a_m8.components.uefi]
+current_version_reported_as = ".*bios.*"
+preingest_upgrade_when_below = "0.0"
+
+[host_models.cisco_ucs_ami]
+vendor = "Cisco"
+model = "CAI-*-M8"
+ordering = ["uefi", "bmc"]
+
+[host_models.cisco_ucs_ami.components.bmc]
+current_version_reported_as = ".*bmc.*"
+preingest_upgrade_when_below = "0.0"
+
+[host_models.cisco_ucs_ami.components.uefi]
+current_version_reported_as = ".*bios.*"
+preingest_upgrade_when_below = "0.0"
+
 [rack_profiles.NVL72]
 [rack_profiles.NVL72.rack_capabilities.compute]
 name = "GB200"

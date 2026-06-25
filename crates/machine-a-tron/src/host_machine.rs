@@ -101,6 +101,8 @@ impl HostMachine {
                 .map(Into::into)
                 .collect(),
             non_dpu_mac_address: persisted_host_machine.non_dpu_mac_address,
+            cisco_product: persisted_host_machine.cisco_product.clone(),
+            cisco_gpu_profile: persisted_host_machine.cisco_gpu_profile,
         };
         let dpus = dpu_machines
             .into_iter()
@@ -173,9 +175,11 @@ impl HostMachine {
                 )
             })
             .collect::<Vec<_>>();
-        let host_info = HostMachineInfo::new(
+        let host_info = HostMachineInfo::with_cisco_profile(
             config.hw_type,
             dpu_machines.iter().map(|d| d.dpu_info().clone()).collect(),
+            config.cisco_product.clone(),
+            config.cisco_gpu_profile,
         );
         let dpus = dpu_machines
             .into_iter()
@@ -583,6 +587,8 @@ impl HostMachineHandle {
             serial: self.0.host_info.serial.clone(),
             dpus: self.0.dpus.iter().map(|d| d.persisted()).collect(),
             non_dpu_mac_address: self.0.host_info.non_dpu_mac_address,
+            cisco_product: self.0.host_info.cisco_product.clone(),
+            cisco_gpu_profile: self.0.host_info.cisco_gpu_profile,
             observed_machine_id: live_state.observed_machine_id,
             installed_os: live_state.installed_os,
             tpm_ek_certificate: live_state.tpm_ek_certificate.clone(),

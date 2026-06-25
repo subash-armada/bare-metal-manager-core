@@ -1312,6 +1312,7 @@ impl RedfishStandard {
             RedfishVendor::Hpe => Ok(Box::new(crate::hpe::Bmc::new(self.clone())?)),
             RedfishVendor::Lenovo => Ok(Box::new(crate::lenovo::Bmc::new(self.clone())?)),
             RedfishVendor::LenovoAMI => Ok(Box::new(crate::ami::Bmc::new(self.clone())?)),
+            RedfishVendor::Cisco => Ok(Box::new(crate::ami::Bmc::new(self.clone())?)),
             RedfishVendor::NvidiaDpu => Ok(Box::new(crate::nvidia_dpu::Bmc::new(self.clone())?)),
             RedfishVendor::NvidiaGBx00 => {
                 Ok(Box::new(crate::nvidia_gbx00::Bmc::new(self.clone())?))

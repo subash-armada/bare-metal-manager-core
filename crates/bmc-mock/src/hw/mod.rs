@@ -45,6 +45,9 @@ pub mod nvidia_switch_nd5200_ld;
 /// Support of NVIDIA DGX H100.
 pub mod nvidia_dgx_h100;
 
+/// Support of Cisco UCS C845A M8.
+pub mod cisco_ucs;
+
 /// Common support of GB200 and GB300
 pub mod nvidia_gbx00;
 
@@ -77,6 +80,7 @@ pub fn bmc_vendor_to_udev_dmi(v: BMCVendor) -> &'static str {
         BMCVendor::Hpe => "HPE",
         BMCVendor::LenovoAMI => "Unknown",
         BMCVendor::Liteon => "Unknown",
+        BMCVendor::Cisco => "Cisco Systems Inc",
         BMCVendor::Unknown => "Unknown",
     }
 }

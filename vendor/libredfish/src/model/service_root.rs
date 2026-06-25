@@ -71,6 +71,7 @@ pub enum RedfishVendor {
     NvidiaGBSwitch, // GB NVLink switch
     P3809, // dummy for P3809, needs to be set to NvidiaGH200 or NvidiaGBSwitch based on chassis
     LiteOnPowerShelf,
+    Cisco,
     DeltaPowerShelf,
     Unknown,
 }
@@ -93,8 +94,13 @@ impl ServiceRoot {
     }
 
     pub fn vendor(&self) -> Option<RedfishVendor> {
+        if self.vendor.is_none() && self.has_cisco_oem() {
+            return Some(RedfishVendor::Cisco);
+        }
+
         let v = self.vendor_string().unwrap_or("Unknown".to_string());
         Some(match v.to_lowercase().as_str() {
+            "ami" if self.has_cisco_oem() => RedfishVendor::Cisco,
             "ami" => RedfishVendor::AMI,
             "dell" => RedfishVendor::Dell,
             "hpe" => RedfishVendor::Hpe,
@@ -112,6 +118,7 @@ impl ServiceRoot {
             },
             "wiwynn" => RedfishVendor::NvidiaGBx00,
             "supermicro" => RedfishVendor::Supermicro,
+            "cisco systems inc" => RedfishVendor::Cisco,
             "lite-on technology corp." => RedfishVendor::LiteOnPowerShelf,
             "delta" => RedfishVendor::DeltaPowerShelf,
             _ => RedfishVendor::Unknown,
@@ -123,6 +130,14 @@ impl ServiceRoot {
         self.oem
             .as_ref()
             .map(|oem| oem.keys().any(|k| k.to_lowercase() == "ami"))
+            .unwrap_or(false)
+    }
+
+    /// Cisco UCS BMCs expose Oem.Cisco alongside Oem.Ami.
+    pub fn has_cisco_oem(&self) -> bool {
+        self.oem
+            .as_ref()
+            .map(|oem| oem.keys().any(|k| k.to_lowercase() == "cisco"))
             .unwrap_or(false)
     }
 }
@@ -146,6 +161,33 @@ mod test {
             ..Default::default()
         };
         assert_eq!(result.vendor().unwrap(), RedfishVendor::NvidiaGBx00);
+    }
+
+    #[test]
+    fn test_cisco_service_root() {
+        let data = include_str!("testdata/cisco_service_root.json");
+        let result: super::ServiceRoot = serde_json::from_str(data).unwrap();
+        assert_eq!(result.vendor().unwrap(), RedfishVendor::Cisco);
+    }
+
+    #[test]
+    fn test_cisco_service_root_oem_fallback() {
+        let result = ServiceRoot {
+            oem: Some(HashMap::from([(
+                "Cisco".to_string(),
+                serde_json::json!({"ProductName": "UCS C885A M8"}),
+            )])),
+            ..Default::default()
+        };
+        assert_eq!(result.vendor().unwrap(), RedfishVendor::Cisco);
+    }
+
+    #[test]
+    fn test_cisco_service_root_c885a() {
+        let data = include_str!("testdata/cisco_service_root_c885a.json");
+        let result: super::ServiceRoot = serde_json::from_str(data).unwrap();
+        assert_eq!(result.vendor().unwrap(), RedfishVendor::Cisco);
+        assert_eq!(result.product.as_deref(), Some("CAI-885A-M8"));
     }
 
     #[test]

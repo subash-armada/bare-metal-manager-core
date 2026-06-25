@@ -1,0 +1,15 @@
+{
+    "@odata.type": "#ServiceRoot.v1_16_0.ServiceRoot",
+    "@odata.id": "/redfish/v1",
+    "Id": "RootService",
+    "Name": "Root Service",
+    "RedfishVersion": "1.17.0",
+    "Vendor": "Cisco Systems Inc",
+    "Product": "CAI-885A-M8",
+    "Oem": {
+        "Ami": {},
+        "Cisco": {
+            "ProductName": "UCS C885A M8"
+        }
+    }
+}

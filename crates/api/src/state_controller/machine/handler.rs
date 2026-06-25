@@ -49,7 +49,7 @@ use itertools::Itertools;
 use libredfish::model::oem::nvidia_dpu::HostPrivilegeLevel;
 use libredfish::model::task::TaskState;
 use libredfish::model::update_service::TransferProtocolType;
-use libredfish::{Boot, EnabledDisabled, Redfish, RedfishError, SystemPowerControl};
+use libredfish::{Boot, BootInterfaceRef, EnabledDisabled, Redfish, RedfishError, SystemPowerControl};
 use machine_validation::{handle_machine_validation_requested, handle_machine_validation_state};
 use measured_boot::records::MeasurementMachineState;
 use model::DpuModel;
@@ -4945,11 +4945,10 @@ impl StateHandler for HostMachineStateHandler {
                         .create_redfish_client_from_machine(&mh_snapshot.host_snapshot)
                         .await?;
 
-                    let boot_interface_mac =
-                        mh_snapshot.boot_interface_mac().map(|m| m.to_string());
+                    let boot_interface = mh_snapshot.boot_interface_mac().map(BootInterfaceRef::Mac);
 
                     match redfish_client
-                        .is_bios_setup(boot_interface_mac.as_deref())
+                        .is_bios_setup(boot_interface)
                         .await
                     {
                         Ok(true) => {
@@ -9507,13 +9506,13 @@ fn can_restart_reprovision(dpu_snapshots: &[Machine], version: ConfigVersion) ->
 /// boot from, instead of special-casing NoDpu errors.
 async fn call_machine_setup_and_handle_no_dpu_error(
     redfish_client: &dyn Redfish,
-    boot_interface_mac: Option<&str>,
+    boot_interface: Option<BootInterfaceRef<'_>>,
     expected_dpu_count: usize,
     site_config: &CarbideConfig,
 ) -> Result<Option<String>, RedfishError> {
     let setup_result = redfish_client
         .machine_setup(
-            boot_interface_mac,
+            boot_interface,
             &site_config.bios_profiles,
             site_config.selected_profile,
             &site_config.oem_manager_profiles,
@@ -9537,12 +9536,12 @@ async fn call_machine_setup_and_handle_no_dpu_error(
 
 async fn set_boot_order_dpu_first_and_handle_no_dpu_error(
     redfish_client: &dyn Redfish,
-    boot_interface_mac: &str,
+    boot_interface: BootInterfaceRef<'_>,
     expected_dpu_count: usize,
     site_config: &CarbideConfig,
 ) -> Result<Option<String>, RedfishError> {
     let setup_result = redfish_client
-        .set_boot_order_dpu_first(boot_interface_mac)
+        .set_boot_order_dpu_first(boot_interface)
         .await;
     match (
         setup_result,
@@ -9922,7 +9921,7 @@ async fn handle_instance_host_platform_config(
                 );
                 false
             } else if redfish_client
-                .is_boot_order_setup(&boot_interface_mac.to_string())
+                .is_boot_order_setup(BootInterfaceRef::Mac(boot_interface_mac))
                 .await
                 .map_err(|e| redfish_error("is_boot_order_setup", e))?
             {
@@ -10043,10 +10042,10 @@ async fn handle_instance_host_platform_config(
                 },
             };
 
-            let boot_interface_mac = mh_snapshot.boot_interface_mac().map(|m| m.to_string());
+            let boot_interface = mh_snapshot.boot_interface_mac().map(BootInterfaceRef::Mac);
 
             match redfish_client
-                .is_bios_setup(boot_interface_mac.as_deref())
+                .is_bios_setup(boot_interface)
                 .await
             {
                 Ok(true) => {
@@ -10130,11 +10129,11 @@ async fn configure_host_bios(
     mh_snapshot: &ManagedHostStateSnapshot,
     retry_count: u32,
 ) -> Result<BiosConfigOutcome, StateHandlerError> {
-    let boot_interface_mac = mh_snapshot.boot_interface_mac().map(|m| m.to_string());
+    let boot_interface = mh_snapshot.boot_interface_mac().map(BootInterfaceRef::Mac);
 
     let bios_job_id = match call_machine_setup_and_handle_no_dpu_error(
         redfish_client,
-        boot_interface_mac.as_deref(),
+        boot_interface,
         mh_snapshot.host_snapshot.associated_dpu_machine_ids().len(),
         &ctx.services.site_config,
     )
@@ -10458,7 +10457,7 @@ async fn set_host_boot_order(
 
             let jid = match set_boot_order_dpu_first_and_handle_no_dpu_error(
                 redfish_client,
-                &boot_interface_mac.to_string(),
+                BootInterfaceRef::Mac(boot_interface_mac),
                 mh_snapshot.host_snapshot.associated_dpu_machine_ids().len(),
                 &ctx.services.site_config,
             )
@@ -10743,7 +10742,7 @@ async fn set_host_boot_order(
             })?;
 
             let boot_order_configured = redfish_client
-                .is_boot_order_setup(&boot_interface_mac.to_string())
+                .is_boot_order_setup(BootInterfaceRef::Mac(boot_interface_mac))
                 .await
                 .map_err(|e| redfish_error("is_boot_order_setup", e))?;
 

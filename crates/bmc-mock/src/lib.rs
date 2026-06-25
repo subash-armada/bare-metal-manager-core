@@ -40,7 +40,7 @@ pub mod tls;
 pub use bmc_state::{BmcEvent, BmcState};
 pub use combined_server::{CombinedServer, ListenerOrAddress};
 pub use machine_info::{
-    DpuFirmwareVersions, DpuMachineInfo, DpuSettings, HostMachineInfo, MachineInfo,
+    CiscoGpuProfile, DpuFirmwareVersions, DpuMachineInfo, DpuSettings, HostMachineInfo, MachineInfo,
 };
 pub use mock_machine_router::{
     BmcCommand, SetSystemPowerError, SetSystemPowerResult, machine_router,
@@ -67,6 +67,8 @@ pub enum HostHardwareType {
     NvidiaDgxH100,
     #[serde(rename = "generic_ami")]
     GenericAmi,
+    #[serde(rename = "cisco_ucs", alias = "cisco_ucs_c845a_m8")]
+    CiscoUcs,
 }
 
 impl fmt::Display for HostHardwareType {
@@ -79,6 +81,7 @@ impl fmt::Display for HostHardwareType {
             Self::NvidiaSwitchNd5200Ld => "NVIDIA Switch ND5200_LD".fmt(f),
             Self::NvidiaDgxH100 => "NVIDIA DGX H100".fmt(f),
             Self::GenericAmi => "Generic AMI Server".fmt(f),
+            Self::CiscoUcs => "Cisco UCS".fmt(f),
         }
     }
 }
@@ -96,6 +99,7 @@ impl HostHardwareType {
             Self::NvidiaSwitchNd5200Ld => Some(0),
             Self::NvidiaDgxH100 => Some(1),
             Self::GenericAmi => None,
+            Self::CiscoUcs => None,
         }
     }
 }

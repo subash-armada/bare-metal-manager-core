@@ -27,8 +27,8 @@ use libredfish::model::task::{Task, TaskState};
 use libredfish::model::update_service::ComponentType;
 use libredfish::model::{LinkStatus, ResourceStatus};
 use libredfish::{
-    Boot, Chassis, EnabledDisabled, EthernetInterface, NetworkDeviceFunction, NetworkPort, Redfish,
-    RedfishError, RoleId, SystemPowerControl,
+    Boot, BootInterfaceRef, Chassis, EnabledDisabled, EthernetInterface, NetworkDeviceFunction,
+    NetworkPort, Redfish, RedfishError, RoleId, SystemPowerControl,
 };
 use mac_address::MacAddress;
 use prettytable::{Table, row};
@@ -37,6 +37,18 @@ use tracing::warn;
 
 use super::args::{Cmd, DpuOperations, FwCommand, RedfishAction, ShowFw, ShowPort};
 use crate::rpc::ApiClient;
+
+fn optional_boot_interface_ref(
+    mac: Option<&str>,
+) -> color_eyre::Result<Option<BootInterfaceRef<'_>>> {
+    mac.map(boot_interface_ref).transpose()
+}
+
+fn boot_interface_ref(mac: &str) -> color_eyre::Result<BootInterfaceRef<'_>> {
+    Ok(BootInterfaceRef::Mac(
+        MacAddress::from_str(mac).map_err(|_| eyre!("invalid boot interface MAC: {mac}"))?,
+    ))
+}
 
 pub async fn handle_browse_command(api_client: &ApiClient, uri: &str) -> color_eyre::Result<()> {
     let data = api_client.0.redfish_browse(uri.to_string()).await?;
@@ -131,7 +143,9 @@ pub async fn action(action: RedfishAction) -> color_eyre::Result<()> {
 
             redfish
                 .machine_setup(
-                    machine_setup_args.boot_interface_mac.as_deref(),
+                    optional_boot_interface_ref(
+                        machine_setup_args.boot_interface_mac.as_deref(),
+                    )?,
                     &bios_profiles,
                     selected_profile,
                     &HashMap::default(),
@@ -142,7 +156,9 @@ pub async fn action(action: RedfishAction) -> color_eyre::Result<()> {
             println!(
                 "{}",
                 redfish
-                    .machine_setup_status(machine_setup_status_args.boot_interface_mac.as_deref())
+                    .machine_setup_status(optional_boot_interface_ref(
+                        machine_setup_status_args.boot_interface_mac.as_deref(),
+                    )?)
                     .await?
             );
         }
@@ -535,7 +551,7 @@ pub async fn action(action: RedfishAction) -> color_eyre::Result<()> {
         }
         SetBootOrderDpuFirst(args) => {
             if let Some(job_id) = redfish
-                .set_boot_order_dpu_first(&args.boot_interface_mac)
+                .set_boot_order_dpu_first(boot_interface_ref(&args.boot_interface_mac)?)
                 .await?
             {
                 tracing::info!(
@@ -591,7 +607,7 @@ pub async fn action(action: RedfishAction) -> color_eyre::Result<()> {
         }
         IsBootOrderSetup(args) => {
             let setup = redfish
-                .is_boot_order_setup(&args.boot_interface_mac)
+                .is_boot_order_setup(boot_interface_ref(&args.boot_interface_mac)?)
                 .await?;
             tracing::info!(setup);
         }

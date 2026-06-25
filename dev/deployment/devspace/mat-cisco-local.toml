@@ -1,0 +1,30 @@
+# Local Cisco UCS machine-a-tron config (pairs with dev/mac-local-dev/carbide-api-config.toml)
+carbide_api_url = "https://127.0.0.1:1079"
+interface = "eth0"
+tui_enabled = true
+log_file = "/tmp/mat-cisco.log"
+use_pxe_api = true
+bmc_mock_port = 2000
+use_single_bmc_mock = true
+mock_bmc_ssh_server = false
+register_expected_machines = true
+configure_carbide_bmc_proxy_host = "127.0.0.1"
+persist_dir = "/tmp/machine-a-tron-cisco"
+host_bmc_password = "vault-password"
+
+[machines.cisco_ucs]
+host_count = 1
+dpu_per_host_count = 0
+hw_type = "cisco_ucs"
+cisco_product = "CAI-845A-M8"
+cisco_gpu_profile = "mgx_pcie"
+template_dir = "crates/machine-a-tron/templates"
+vpc_count = 1
+subnets_per_vpc = 1
+dpu_reboot_delay = 1
+host_reboot_delay = 1
+run_interval_working = "1s"
+run_interval_idle = "5s"
+oob_dhcp_relay_address = "192.168.2.1"
+# Zero-DPU host PXE DHCP relay — must match bootstrap-host-inband.sh gateway (host_inband segment).
+admin_dhcp_relay_address = "192.168.253.1"

@@ -151,6 +151,7 @@ pub async fn nv_generate_exploration_report<B: Bmc>(
                 need_oem_ami_config_bmc: true,
                 ..Default::default()
             },
+            hw::HwType::Cisco => manager::Config::default(),
             hw::HwType::Supermicro => manager::Config {
                 need_host_interfaces: true,
                 need_oem_supermicro_kcs_interface: true,
@@ -172,6 +173,7 @@ pub async fn nv_generate_exploration_report<B: Bmc>(
             // When needed Chassis Id is equal to System Id.
             Some(
                 hw::HwType::Ami
+                | hw::HwType::Cisco
                 | hw::HwType::Dell
                 | hw::HwType::Hpe
                 | hw::HwType::Lenovo
@@ -272,6 +274,7 @@ pub(crate) fn hw_type<B: Bmc>(
             "Lenovo" if oem_id == Some("Ami") => Some(hw::HwType::LenovoAmi),
             "Lenovo" if oem_id != Some("Ami") => Some(hw::HwType::Lenovo),
             "Supermicro" => Some(hw::HwType::Supermicro),
+            "Cisco Systems Inc" => Some(hw::HwType::Cisco),
             "HPE" => Some(hw::HwType::Hpe),
             "Nvidia" if system.id().into_inner() == "Bluefield" => Some(hw::HwType::Bluefield),
             "WIWYNN" | "NVIDIA"
@@ -282,6 +285,11 @@ pub(crate) fn hw_type<B: Bmc>(
             }
             "NVIDIA" if root.product() == Some(Product::new("P3809")) => Some(hw::HwType::NvSwitch),
             _ => None,
+        })
+        .or_else(|| {
+            explored_chassis
+                .is_cisco()
+                .then_some(hw::HwType::Cisco)
         })
         .or_else(|| {
             explored_chassis
@@ -602,6 +610,19 @@ fn machine_setup_status<B: Bmc>(
         hw::HwType::Ami | hw::HwType::LenovoAmi => {
             diffs.extend(
                 hw::lenovo_ami::EXPECTED_BIOS_ATTRS
+                    .iter()
+                    .flat_map(|expected| explored_system.verify_bios_attr(expected)),
+            );
+            if let Some(mac) = boot_interface_mac
+                && let Some(diff) = explored_system.check_boot_by_uefi_prefix(mac)
+            {
+                diffs.push(diff)
+            }
+        }
+
+        hw::HwType::Cisco => {
+            diffs.extend(
+                hw::cisco::EXPECTED_BIOS_ATTRS
                     .iter()
                     .flat_map(|expected| explored_system.verify_bios_attr(expected)),
             );

@@ -42,6 +42,7 @@ inquiries or technical specifications, please contact the original hardware vend
 | Dell R760xd2                        | iDRAC 7.20.80.50                    | 2.9.4               | 1.1.2                                           |
 | Dell R670                           | iDRAC 1.20.80.51                    | 1.7.5               |                                                 |
 | Dell R770                           | iDRAC 1.20.80.51                    | 1.7.5               |                                                 |
+| Cisco UCS C845A M8                  | 2.0(2.260062)                       | 1.9.1               |                                                 |
 | SYS-421GE-TNRT                      | 1.03.19                             | 2.6                 | SAA Ver = 1.2.0-p8                              |
 | Dell PowerEdge R640                 | iDRAC 7.00.00.182                   | 2.24.0              | 1.0.6                                           |
 
@@ -54,6 +55,7 @@ This list outlines platforms that are under development and have not undergone f
 | Host Machine                        | BMC/Management Firmware Version     | BIOS/UEFI Version   | Provisioning Manager Version               |
 |-------------------------------------|-------------------------------------|---------------------|--------------------------------------------|
 | Lenovo GB300 Compute Tray           | 3.0.0                               | 1.0.0GA             | 1.0.0GA                                    |
+| Cisco UCS C885A M8                  | 2.0(2.260062) (expected)            | 1.9.1 (expected)    |                                            |
 
 ## DPUs
 

@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bmc_mock::{DpuMachineInfo, DpuSettings, HostHardwareType, HostMachineInfo};
+use bmc_mock::{CiscoGpuProfile, DpuMachineInfo, DpuSettings, HostHardwareType, HostMachineInfo};
 use carbide_uuid::machine::MachineId;
 use clap::Parser;
 use duration_str::deserialize_duration;
@@ -119,6 +119,14 @@ pub struct MachineConfig {
     /// What firmware versions to report for DPUs in this host
     #[serde(default)]
     pub dpu_firmware_versions: Option<DpuFirmwareVersions>,
+
+    /// Cisco UCS product string (e.g. CAI-845A-M8, CAI-885A-M8) when hw_type is cisco_ucs.
+    #[serde(default)]
+    pub cisco_product: Option<String>,
+
+    /// Cisco UCS GPU layout profile when hw_type is cisco_ucs.
+    #[serde(default)]
+    pub cisco_gpu_profile: Option<CiscoGpuProfile>,
 
     #[serde(default)]
     pub dpu_agent_version: Option<String>,
@@ -329,6 +337,10 @@ pub struct PersistedHostMachine {
     pub serial: String,
     pub dpus: Vec<PersistedDpuMachine>,
     pub non_dpu_mac_address: Option<MacAddress>,
+    #[serde(default)]
+    pub cisco_product: Option<String>,
+    #[serde(default)]
+    pub cisco_gpu_profile: Option<CiscoGpuProfile>,
     pub observed_machine_id: Option<MachineId>,
     pub installed_os: OsImage,
     pub tpm_ek_certificate: Option<Vec<u8>>,
@@ -344,6 +356,8 @@ impl From<PersistedHostMachine> for HostMachineInfo {
             serial: value.serial,
             dpus: value.dpus.into_iter().map(Into::into).collect(),
             non_dpu_mac_address: value.non_dpu_mac_address,
+            cisco_product: value.cisco_product,
+            cisco_gpu_profile: value.cisco_gpu_profile,
         }
     }
 }

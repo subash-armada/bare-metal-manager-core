@@ -27,6 +27,7 @@ pub enum BmcVendor {
     Wiwynn,
     LiteOn,
     Ami,
+    Cisco,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -44,6 +45,7 @@ impl BmcVendor {
             BmcVendor::Wiwynn => Some("WIWYNN"),
             BmcVendor::LiteOn => None,
             BmcVendor::Ami => Some("AMI"),
+            BmcVendor::Cisco => Some("Cisco Systems Inc"),
         }
     }
     // This function creates settings of the resource from the resource
@@ -53,7 +55,8 @@ impl BmcVendor {
             BmcVendor::Nvidia(_) | BmcVendor::Dell | BmcVendor::Wiwynn | BmcVendor::LiteOn => {
                 format!("{}/Settings", resource.odata_id)
             }
-            BmcVendor::Ami => {
+            // AMI MegaRAC (including Cisco UCS) uses /SD for pending BIOS/settings.
+            BmcVendor::Ami | BmcVendor::Cisco => {
                 format!("{}/SD", resource.odata_id)
             }
         }

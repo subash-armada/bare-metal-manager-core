@@ -66,6 +66,24 @@ impl Bmc {
         Ok(Bmc { s })
     }
 
+    fn is_cisco(&self) -> bool {
+        self.s.vendor == Some(RedfishVendor::Cisco)
+    }
+
+    async fn enable_automatic_retry_boot(&self) -> Result<(), RedfishError> {
+        use serde_json::json;
+
+        let url = format!("Systems/{}", self.s.system_id());
+        let body = HashMap::from([(
+            "Boot",
+            json!({
+                "AutomaticRetryConfig": "RetryAttempts",
+                "AutomaticRetryAttempts": 999
+            }),
+        )]);
+        self.s.client.patch_with_if_match(&url, body).await
+    }
+
     /// LenovoAMI-specific lockdown status via OEM ConfigBMC endpoint.
     async fn lockdown_status_lenovo_ami(&self) -> Result<Status, RedfishError> {
         const LOCKDOWN_FIELDS: &[&str] = &[
@@ -347,6 +365,9 @@ impl Redfish for Bmc {
             self.clear_tpm().await?;
             let attrs = self.machine_setup_attrs();
             self.set_bios(attrs).await?;
+            if self.is_cisco() {
+                self.enable_automatic_retry_boot().await?;
+            }
             Ok(None)
         })
     }
@@ -379,13 +400,28 @@ impl Redfish for Bmc {
                 }
             }
 
-            let lockdown = self.lockdown_status().await?;
-            if !lockdown.is_fully_enabled() {
-                diffs.push(MachineSetupDiff {
-                    key: "lockdown".to_string(),
-                    expected: "Enabled".to_string(),
-                    actual: lockdown.status.to_string(),
-                });
+            if self.is_cisco() {
+                let system = self.s.get_system().await?;
+                if !crate::cisco::is_automatic_retry_boot_enabled(&system.boot) {
+                    diffs.push(MachineSetupDiff {
+                        key: "AutomaticRetryConfig".to_string(),
+                        expected: "RetryAttempts with attempts > 0".to_string(),
+                        actual: format!(
+                            "{:?}/{}",
+                            system.boot.automatic_retry_config,
+                            system.boot.automatic_retry_attempts.unwrap_or(0)
+                        ),
+                    });
+                }
+            } else {
+                let lockdown = self.lockdown_status().await?;
+                if !lockdown.is_fully_enabled() {
+                    diffs.push(MachineSetupDiff {
+                        key: "lockdown".to_string(),
+                        expected: "Enabled".to_string(),
+                        actual: lockdown.status.to_string(),
+                    });
+                }
             }
 
             Ok(MachineSetupStatus {
@@ -432,6 +468,11 @@ impl Redfish for Bmc {
     ) -> crate::RedfishFuture<'a, Result<(), RedfishError>> {
         Box::pin(async move {
             use EnabledDisabled::*;
+            if self.is_cisco() {
+                return Err(RedfishError::NotSupported(
+                    "Cisco UCS lockdown is not implemented".to_string(),
+                ));
+            }
             if self.s.vendor == Some(RedfishVendor::LenovoAMI) {
                 let value = match target {
                     Enabled => "Enable",
@@ -472,6 +513,11 @@ impl Redfish for Bmc {
     /// On LenovoAMI, reads the OEM ConfigBMC endpoint instead.
     fn lockdown_status<'a>(&'a self) -> crate::RedfishFuture<'a, Result<Status, RedfishError>> {
         Box::pin(async move {
+            if self.is_cisco() {
+                return Err(RedfishError::NotSupported(
+                    "Cisco UCS lockdown is not implemented".to_string(),
+                ));
+            }
             if self.s.vendor == Some(RedfishVendor::LenovoAMI) {
                 return self.lockdown_status_lenovo_ami().await;
             }
@@ -513,6 +559,10 @@ impl Redfish for Bmc {
     /// Setup serial console for AMI BMC via BIOS attributes.
     fn setup_serial_console<'a>(&'a self) -> crate::RedfishFuture<'a, Result<(), RedfishError>> {
         Box::pin(async move {
+            if self.is_cisco() {
+                return self.set_bios(crate::cisco::serial_console_attrs()).await;
+            }
+
             use serde_json::Value;
 
             let attributes: HashMap<String, Value> = HashMap::from([
@@ -539,16 +589,23 @@ impl Redfish for Bmc {
             let url = format!("Systems/{}/Bios", self.s.system_id());
             let attrs = jsonmap::get_object(&bios, "Attributes", &url)?;
 
-            let expected = vec![
-                ("TER001", "Enabled", "Disabled"),
-                ("TER010", "Enabled", "Disabled"),
-                ("TER06B", "COM1", "any"),
-                ("TER0021", "115200", "any"),
-                ("TER0020", "115200", "any"),
-                ("TER012", "VT100Plus", "any"),
-                ("TER011", "VT-UTF8", "any"),
-                ("TER05D", "None", "any"),
-            ];
+            let expected = if self.is_cisco() {
+                crate::cisco::serial_console_expected()
+                    .iter()
+                    .map(|(k, enabled, disabled)| (*k, *enabled, *disabled))
+                    .collect::<Vec<_>>()
+            } else {
+                vec![
+                    ("TER001", "Enabled", "Disabled"),
+                    ("TER010", "Enabled", "Disabled"),
+                    ("TER06B", "COM1", "any"),
+                    ("TER0021", "115200", "any"),
+                    ("TER0020", "115200", "any"),
+                    ("TER012", "VT100Plus", "any"),
+                    ("TER011", "VT-UTF8", "any"),
+                    ("TER05D", "None", "any"),
+                ]
+            };
 
             let mut message = String::new();
             let mut enabled = true;
@@ -1098,11 +1155,15 @@ impl Redfish for Bmc {
 
     fn enable_infinite_boot<'a>(&'a self) -> crate::RedfishFuture<'a, Result<(), RedfishError>> {
         Box::pin(async move {
-            self.set_bios(HashMap::from([(
-                "EndlessBoot".to_string(),
-                "Enabled".into(),
-            )]))
-            .await
+            if self.is_cisco() {
+                self.enable_automatic_retry_boot().await
+            } else {
+                self.set_bios(HashMap::from([(
+                    "EndlessBoot".to_string(),
+                    "Enabled".into(),
+                )]))
+                .await
+            }
         })
     }
 
@@ -1110,11 +1171,18 @@ impl Redfish for Bmc {
         &'a self,
     ) -> crate::RedfishFuture<'a, Result<Option<bool>, RedfishError>> {
         Box::pin(async move {
-            let bios = self.s.bios().await?;
-            let url = format!("Systems/{}/Bios", self.s.system_id());
-            let attrs = jsonmap::get_object(&bios, "Attributes", &url)?;
-            let endless_boot = jsonmap::get_str(attrs, "EndlessBoot", "Bios Attributes")?;
-            Ok(Some(endless_boot == "Enabled"))
+            if self.is_cisco() {
+                let system = self.s.get_system().await?;
+                Ok(Some(crate::cisco::is_automatic_retry_boot_enabled(
+                    &system.boot,
+                )))
+            } else {
+                let bios = self.s.bios().await?;
+                let url = format!("Systems/{}/Bios", self.s.system_id());
+                let attrs = jsonmap::get_object(&bios, "Attributes", &url)?;
+                let endless_boot = jsonmap::get_str(attrs, "EndlessBoot", "Bios Attributes")?;
+                Ok(Some(endless_boot == "Enabled"))
+            }
         })
     }
 
@@ -1348,6 +1416,10 @@ impl Bmc {
 
     /// Get the BIOS attributes for machine setup.
     fn machine_setup_attrs(&self) -> HashMap<String, serde_json::Value> {
+        if self.is_cisco() {
+            return crate::cisco::machine_setup_attrs();
+        }
+
         HashMap::from([
             ("VMXEN".to_string(), "Enable".into()), // VMX (Intel Virtualization)
             ("PCIS007".to_string(), "Enabled".into()), // SR-IOV Support

@@ -28,6 +28,8 @@ use crate::{
     DUMMY_FACTORY_DPU_PASSWORD, DUMMY_FACTORY_PASSWORD, DUMMY_FACTORY_USERNAME, HostHardwareType,
 };
 
+pub use crate::hw::cisco_ucs::CiscoGpuProfile;
+
 /// Represents static information we know ahead of time about a host or DPU (independent of any
 /// state we get from carbide like IP addresses or machine ID's.) Intended to be immutable and
 /// easily cloneable.
@@ -44,6 +46,10 @@ pub struct HostMachineInfo {
     pub serial: String,
     pub dpus: Vec<DpuMachineInfo>,
     pub non_dpu_mac_address: Option<MacAddress>,
+    #[serde(default)]
+    pub cisco_product: Option<String>,
+    #[serde(default)]
+    pub cisco_gpu_profile: Option<CiscoGpuProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,8 +117,9 @@ impl DpuMachineInfo {
     fn bluefield3(&self) -> hw::bluefield3::Bluefield3<'_> {
         let mode = match self.hw_type {
             HostHardwareType::DellPowerEdgeR750
-            | HostHardwareType::NvidiaDgxH100
-            | HostHardwareType::GenericAmi => hw::bluefield3::Mode::SuperNIC {
+            |             HostHardwareType::NvidiaDgxH100
+            | HostHardwareType::GenericAmi
+            | HostHardwareType::CiscoUcs => hw::bluefield3::Mode::SuperNIC {
                 nic_mode: self.settings.nic_mode,
             },
             HostHardwareType::WiwynnGB200Nvl | HostHardwareType::LenovoGB300Nvl => {
@@ -141,6 +148,15 @@ impl DpuMachineInfo {
 
 impl HostMachineInfo {
     pub fn new(hw_type: HostHardwareType, dpus: Vec<DpuMachineInfo>) -> Self {
+        Self::with_cisco_profile(hw_type, dpus, None, None)
+    }
+
+    pub fn with_cisco_profile(
+        hw_type: HostHardwareType,
+        dpus: Vec<DpuMachineInfo>,
+        cisco_product: Option<String>,
+        cisco_gpu_profile: Option<CiscoGpuProfile>,
+    ) -> Self {
         let bmc_mac_address = next_mac();
         Self {
             hw_type,
@@ -152,6 +168,8 @@ impl HostMachineInfo {
                 None
             },
             dpus,
+            cisco_product,
+            cisco_gpu_profile,
         }
     }
 
@@ -175,7 +193,8 @@ impl HostMachineInfo {
             | HostHardwareType::LiteOnPowerShelf
             | HostHardwareType::NvidiaDgxH100
             | HostHardwareType::NvidiaSwitchNd5200Ld
-            | HostHardwareType::GenericAmi => redfish::oem::State::Other,
+            | HostHardwareType::GenericAmi
+            | HostHardwareType::CiscoUcs => redfish::oem::State::Other,
         }
     }
 
@@ -190,19 +209,30 @@ impl HostMachineInfo {
             }
             HostHardwareType::NvidiaDgxH100 => redfish::oem::BmcVendor::Ami,
             HostHardwareType::GenericAmi => redfish::oem::BmcVendor::Ami,
+            HostHardwareType::CiscoUcs => redfish::oem::BmcVendor::Cisco,
         }
     }
 
-    pub fn bmc_product(&self) -> Option<&'static str> {
+    pub fn bmc_product(&self) -> Option<String> {
         match self.hw_type {
             HostHardwareType::DellPowerEdgeR750 => None,
-            HostHardwareType::WiwynnGB200Nvl => Some("GB200 NVL"),
-            HostHardwareType::LenovoGB300Nvl => Some("AMI Redfish Server"),
+            HostHardwareType::WiwynnGB200Nvl => Some("GB200 NVL".into()),
+            HostHardwareType::LenovoGB300Nvl => Some("AMI Redfish Server".into()),
             HostHardwareType::LiteOnPowerShelf => None,
-            HostHardwareType::NvidiaSwitchNd5200Ld => Some("P3809"),
-            HostHardwareType::NvidiaDgxH100 => Some("AMI Redfish Server"),
-            HostHardwareType::GenericAmi => Some("AMI Redfish Server"),
+            HostHardwareType::NvidiaSwitchNd5200Ld => Some("P3809".into()),
+            HostHardwareType::NvidiaDgxH100 => Some("AMI Redfish Server".into()),
+            HostHardwareType::GenericAmi => Some("AMI Redfish Server".into()),
+            HostHardwareType::CiscoUcs => Some(
+                self.cisco_product
+                    .as_deref()
+                    .unwrap_or("CAI-845A-M8")
+                    .to_string(),
+            ),
         }
+    }
+
+    fn resolved_cisco_gpu_profile(&self) -> CiscoGpuProfile {
+        self.cisco_gpu_profile.unwrap_or_default()
     }
 
     pub fn bmc_redfish_version(&self) -> &'static str {
@@ -214,6 +244,7 @@ impl HostMachineInfo {
             HostHardwareType::NvidiaSwitchNd5200Ld => "1.17.0",
             HostHardwareType::NvidiaDgxH100 => "1.11.0",
             HostHardwareType::GenericAmi => "1.17.0",
+            HostHardwareType::CiscoUcs => "1.17.0",
         }
     }
 
@@ -228,6 +259,7 @@ impl HostMachineInfo {
             }
             HostHardwareType::NvidiaDgxH100 => self.nvidia_dgx_h100().manager_config(),
             HostHardwareType::GenericAmi => self.generic_ami().manager_config(),
+            HostHardwareType::CiscoUcs => self.cisco_ucs().manager_config(),
         }
     }
 
@@ -247,6 +279,7 @@ impl HostMachineInfo {
             }
             HostHardwareType::NvidiaDgxH100 => self.nvidia_dgx_h100().system_config(callbacks),
             HostHardwareType::GenericAmi => self.generic_ami().system_config(callbacks),
+            HostHardwareType::CiscoUcs => self.cisco_ucs().system_config(callbacks),
         }
     }
 
@@ -261,6 +294,7 @@ impl HostMachineInfo {
             }
             HostHardwareType::NvidiaDgxH100 => self.nvidia_dgx_h100().chassis_config(),
             HostHardwareType::GenericAmi => self.generic_ami().chassis_config(),
+            HostHardwareType::CiscoUcs => self.cisco_ucs().chassis_config(),
         }
     }
 
@@ -277,6 +311,7 @@ impl HostMachineInfo {
             }
             HostHardwareType::NvidiaDgxH100 => self.nvidia_dgx_h100().update_service_config(),
             HostHardwareType::GenericAmi => self.generic_ami().update_service_config(),
+            HostHardwareType::CiscoUcs => self.cisco_ucs().update_service_config(),
         }
     }
 
@@ -287,6 +322,7 @@ impl HostMachineInfo {
             HostHardwareType::LenovoGB300Nvl => self.lenovo_gb300_nvl().discovery_info(),
             HostHardwareType::NvidiaDgxH100 => self.nvidia_dgx_h100().discovery_info(),
             HostHardwareType::GenericAmi => self.generic_ami().discovery_info(),
+            HostHardwareType::CiscoUcs => self.cisco_ucs().discovery_info(),
             HostHardwareType::LiteOnPowerShelf | HostHardwareType::NvidiaSwitchNd5200Ld => {
                 panic!("discovery_info requested for {}", self.hw_type)
             }
@@ -297,6 +333,7 @@ impl HostMachineInfo {
         // TODO: need to be updated for each individual system.
         let id = match self.hw_type {
             HostHardwareType::NvidiaDgxH100 | HostHardwareType::GenericAmi => "2",
+            HostHardwareType::CiscoUcs => "admin",
             _ => DUMMY_FACTORY_USERNAME,
         };
         redfish::account_service::Account::administrator(
@@ -514,6 +551,33 @@ impl HostMachineInfo {
             nics,
         }
     }
+
+    fn cisco_ucs(&self) -> hw::cisco_ucs::CiscoUcs<'_> {
+        let nics = if self.dpus.is_empty() {
+            self.non_dpu_mac_address
+                .iter()
+                .enumerate()
+                .map(|(index, mac_address)| (index + 1, hw::nic::Nic::rooftop(*mac_address)))
+                .collect()
+        } else {
+            self.dpus
+                .iter()
+                .enumerate()
+                .map(|(index, dpu)| (index + 1, dpu.bluefield3().host_nic()))
+                .collect()
+        };
+
+        hw::cisco_ucs::CiscoUcs {
+            product: Cow::Borrowed(
+                self.cisco_product
+                    .as_deref()
+                    .unwrap_or("CAI-845A-M8"),
+            ),
+            gpu_profile: self.resolved_cisco_gpu_profile(),
+            product_serial_number: Cow::Borrowed(&self.serial),
+            nics,
+        }
+    }
 }
 
 impl MachineInfo {
@@ -552,10 +616,10 @@ impl MachineInfo {
         }
     }
 
-    pub fn bmc_product(&self) -> Option<&'static str> {
+    pub fn bmc_product(&self) -> Option<String> {
         match self {
             MachineInfo::Host(h) => h.bmc_product(),
-            MachineInfo::Dpu(_) => Some("BlueField-3 DPU"),
+            MachineInfo::Dpu(_) => Some("BlueField-3 DPU".into()),
         }
     }
 

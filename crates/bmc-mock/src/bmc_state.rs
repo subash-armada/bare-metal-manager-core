@@ -27,7 +27,7 @@ use crate::redfish::update_service::UpdateServiceState;
 #[derive(Clone)]
 pub struct BmcState {
     pub bmc_vendor: redfish::oem::BmcVendor,
-    pub bmc_product: Option<&'static str>,
+    pub bmc_product: Option<String>,
     pub bmc_redfish_version: &'static str,
     pub oem_state: redfish::oem::State,
     pub manager: Arc<ManagerState>,

@@ -36,7 +36,7 @@ The script is fully self-contained and idempotent.  On each run it:
    `/tmp/carbide-localdev-vault-root-token`.
 3. Regenerates **TLS certificates** under `dev/certs/localhost/` if they are
    missing or stale (`gen-certs.sh` is idempotent).
-4. Starts a **Postgres** container (`pgdev`) on port **5432** with SSL if not
+4. Starts a **Postgres** container (`pgdev`) on port **5432** (no TLS — local dev only) if not
    already running.
 5. Creates `/opt/carbide/firmware` (may prompt for `sudo` once).
 6. Writes a temporary resolved config to `/tmp/carbide-api-config-<PID>.toml`
@@ -63,6 +63,18 @@ docker rm -f carbide-vault pgdev
 
 # Also regenerate certs from scratch
 rm -f dev/certs/localhost/*.crt dev/certs/localhost/*.key
+```
+
+### Cisco UCS zero-DPU local lab (Linux / WSL)
+
+On Linux or WSL, simulate a Cisco UCS C845A M8 host with machine-a-tron and
+bmc-mock. See **[CISCO-UCS-LOCAL-LAB.md](CISCO-UCS-LOCAL-LAB.md)** for code
+changes, fresh-start reset steps, simulation workflow, and troubleshooting.
+
+```bash
+./dev/mac-local-dev/run-carbide-api.sh          # terminal 1
+./dev/mac-local-dev/bootstrap-host-inband.sh    # once API is up (zero-DPU host_inband)
+./dev/mac-local-dev/run-machine-a-tron-cisco.sh # terminal 2
 ```
 
 ---

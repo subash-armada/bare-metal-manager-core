@@ -30,7 +30,7 @@ use carbide_redfish::nv_redfish::NvRedfishClientPool;
 use forge_secrets::credentials::Credentials;
 use libredfish::model::oem::nvidia_dpu::NicMode;
 use libredfish::model::service_root::RedfishVendor;
-use libredfish::{Redfish, RedfishError};
+use libredfish::{BootInterfaceRef, Redfish, RedfishError};
 use mac_address::MacAddress;
 use model::site_explorer::{
     BootOption, BootOrder, Chassis, ComputerSystem, ComputerSystemAttributes,
@@ -214,6 +214,7 @@ impl RedfishClient {
             | RedfishVendor::NvidiaGBSwitch
             | RedfishVendor::P3809
             | RedfishVendor::LiteOnPowerShelf
+            | RedfishVendor::DeltaPowerShelf
             | RedfishVendor::NvidiaGBx00 => {
                 // change_password does things that require a password and DPUs need a first
                 // password use to be change, so just change it directly
@@ -243,6 +244,7 @@ impl RedfishClient {
                     .map_err(map_redfish_error)?;
             }
             RedfishVendor::LenovoAMI
+            | RedfishVendor::Cisco
             | RedfishVendor::Supermicro
             | RedfishVendor::Dell
             | RedfishVendor::Hpe => {
@@ -516,7 +518,11 @@ impl RedfishClient {
         // We will be redoing machine_setup later and can worry about getting the profile right then.
         client
             .machine_setup(
-                boot_interface_mac,
+                boot_interface_mac.and_then(|mac| {
+                    mac_address::MacAddress::from_str(mac)
+                        .ok()
+                        .map(BootInterfaceRef::Mac)
+                }),
                 &HashMap::default(),
                 libredfish::BiosProfileType::Performance,
                 &HashMap::default(),
@@ -538,8 +544,14 @@ impl RedfishClient {
             .await
             .map_err(map_redfish_client_creation_error)?;
 
+        let boot_mac = mac_address::MacAddress::from_str(boot_interface_mac).map_err(|_| {
+            EndpointExplorationError::Other {
+                details: format!("invalid boot interface MAC: {boot_interface_mac}"),
+            }
+        })?;
+
         client
-            .set_boot_order_dpu_first(boot_interface_mac)
+            .set_boot_order_dpu_first(BootInterfaceRef::Mac(boot_mac))
             .await
             .map_err(map_redfish_error)?;
 
@@ -1143,7 +1155,7 @@ async fn fetch_machine_setup_status(
     boot_interface_mac: Option<MacAddress>,
 ) -> Result<MachineSetupStatus, RedfishError> {
     let status = client
-        .machine_setup_status(boot_interface_mac.map(|mac| mac.to_string()).as_deref())
+        .machine_setup_status(boot_interface_mac.map(BootInterfaceRef::Mac))
         .await?;
     let mut diffs: Vec<MachineSetupDiff> = Vec::new();
 

@@ -230,6 +230,8 @@ impl MachineStateMachine {
                         serial: h.serial,
                         dpus: h.dpus.into_iter().map(Into::into).collect(),
                         non_dpu_mac_address: h.non_dpu_mac_address,
+                        cisco_product: h.cisco_product,
+                        cisco_gpu_profile: h.cisco_gpu_profile,
                     }),
                 ),
                 PersistedMachine::Dpu(d) => (

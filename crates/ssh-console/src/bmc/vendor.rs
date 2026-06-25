@@ -79,6 +79,7 @@ impl BmcVendor {
             BMCVendor::Dell => BmcVendor::Ssh(SshBmcVendor::Dell),
             BMCVendor::Supermicro => BmcVendor::Ipmi(IpmiBmcVendor::Supermicro),
             BMCVendor::Hpe => BmcVendor::Ssh(SshBmcVendor::Hpe),
+            BMCVendor::Cisco => BmcVendor::Ssh(SshBmcVendor::LenovoAmi),
             BMCVendor::Nvidia => BmcVendor::Ipmi(IpmiBmcVendor::NvidiaViking),
             // Intentionally not doing a default `_` case so we get compiler errors (and can add more cases) later.
             // TODO: figure out what kind of connection Liteon uses.
