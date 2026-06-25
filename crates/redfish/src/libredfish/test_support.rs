@@ -1173,9 +1173,7 @@ impl Redfish for RedfishSimClient {
             let host_state = state.hosts.get_mut(&self._host).unwrap();
             host_state
                 .actions
-                .push(RedfishSimAction::SetBootOrderDpuFirst {
-                    boot_interface_mac,
-                });
+                .push(RedfishSimAction::SetBootOrderDpuFirst { boot_interface_mac });
             Ok(None)
         })
     }
@@ -1351,9 +1349,9 @@ impl Redfish for RedfishSimClient {
             };
             let mut state = self.state.lock().unwrap();
             let host_state = state.hosts.get_mut(&self._host).unwrap();
-            host_state.actions.push(RedfishSimAction::IsBootOrderSetup {
-                boot_interface_mac,
-            });
+            host_state
+                .actions
+                .push(RedfishSimAction::IsBootOrderSetup { boot_interface_mac });
             Ok(true)
         })
     }

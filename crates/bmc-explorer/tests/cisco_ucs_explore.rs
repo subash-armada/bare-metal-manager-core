@@ -1,8 +1,7 @@
 mod common;
 
 use bmc_explorer::nv_generate_exploration_report;
-use bmc_mock::test_support;
-use bmc_mock::CiscoGpuProfile;
+use bmc_mock::{CiscoGpuProfile, test_support};
 use bmc_vendor::BMCVendor;
 use model::site_explorer::EndpointType;
 use tokio::test;

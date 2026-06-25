@@ -257,7 +257,10 @@ impl SingleSystemState {
 
     fn apply_boot_patch(&self, boot: &serde_json::Value) {
         let mut boot_retry = self.boot_retry.lock().unwrap();
-        if let Some(v) = boot.get("AutomaticRetryConfig").and_then(serde_json::Value::as_str) {
+        if let Some(v) = boot
+            .get("AutomaticRetryConfig")
+            .and_then(serde_json::Value::as_str)
+        {
             boot_retry.automatic_retry_config = Some(v.to_string());
         }
         if let Some(v) = boot

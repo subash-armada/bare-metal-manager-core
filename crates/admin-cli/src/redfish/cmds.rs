@@ -143,9 +143,7 @@ pub async fn action(action: RedfishAction) -> color_eyre::Result<()> {
 
             redfish
                 .machine_setup(
-                    optional_boot_interface_ref(
-                        machine_setup_args.boot_interface_mac.as_deref(),
-                    )?,
+                    optional_boot_interface_ref(machine_setup_args.boot_interface_mac.as_deref())?,
                     &bios_profiles,
                     selected_profile,
                     &HashMap::default(),

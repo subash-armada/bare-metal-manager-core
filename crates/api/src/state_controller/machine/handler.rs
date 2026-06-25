@@ -49,7 +49,9 @@ use itertools::Itertools;
 use libredfish::model::oem::nvidia_dpu::HostPrivilegeLevel;
 use libredfish::model::task::TaskState;
 use libredfish::model::update_service::TransferProtocolType;
-use libredfish::{Boot, BootInterfaceRef, EnabledDisabled, Redfish, RedfishError, SystemPowerControl};
+use libredfish::{
+    Boot, BootInterfaceRef, EnabledDisabled, Redfish, RedfishError, SystemPowerControl,
+};
 use machine_validation::{handle_machine_validation_requested, handle_machine_validation_state};
 use measured_boot::records::MeasurementMachineState;
 use model::DpuModel;
@@ -4945,12 +4947,10 @@ impl StateHandler for HostMachineStateHandler {
                         .create_redfish_client_from_machine(&mh_snapshot.host_snapshot)
                         .await?;
 
-                    let boot_interface = mh_snapshot.boot_interface_mac().map(BootInterfaceRef::Mac);
+                    let boot_interface =
+                        mh_snapshot.boot_interface_mac().map(BootInterfaceRef::Mac);
 
-                    match redfish_client
-                        .is_bios_setup(boot_interface)
-                        .await
-                    {
+                    match redfish_client.is_bios_setup(boot_interface).await {
                         Ok(true) => {
                             tracing::info!(
                                 machine_id = %mh_snapshot.host_snapshot.id,
@@ -10044,10 +10044,7 @@ async fn handle_instance_host_platform_config(
 
             let boot_interface = mh_snapshot.boot_interface_mac().map(BootInterfaceRef::Mac);
 
-            match redfish_client
-                .is_bios_setup(boot_interface)
-                .await
-            {
+            match redfish_client.is_bios_setup(boot_interface).await {
                 Ok(true) => {
                     tracing::info!(
                         machine_id = %mh_snapshot.host_snapshot.id,

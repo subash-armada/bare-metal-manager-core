@@ -24,11 +24,10 @@ use serde::{Deserialize, Serialize};
 use crate::redfish::update_service::UpdateServiceConfig;
 use crate::{hw, redfish};
 static NEXT_MAC_ADDRESS: AtomicU32 = AtomicU32::new(1);
+pub use crate::hw::cisco_ucs::CiscoGpuProfile;
 use crate::{
     DUMMY_FACTORY_DPU_PASSWORD, DUMMY_FACTORY_PASSWORD, DUMMY_FACTORY_USERNAME, HostHardwareType,
 };
-
-pub use crate::hw::cisco_ucs::CiscoGpuProfile;
 
 /// Represents static information we know ahead of time about a host or DPU (independent of any
 /// state we get from carbide like IP addresses or machine ID's.) Intended to be immutable and
@@ -117,7 +116,7 @@ impl DpuMachineInfo {
     fn bluefield3(&self) -> hw::bluefield3::Bluefield3<'_> {
         let mode = match self.hw_type {
             HostHardwareType::DellPowerEdgeR750
-            |             HostHardwareType::NvidiaDgxH100
+            | HostHardwareType::NvidiaDgxH100
             | HostHardwareType::GenericAmi
             | HostHardwareType::CiscoUcs => hw::bluefield3::Mode::SuperNIC {
                 nic_mode: self.settings.nic_mode,
@@ -568,11 +567,7 @@ impl HostMachineInfo {
         };
 
         hw::cisco_ucs::CiscoUcs {
-            product: Cow::Borrowed(
-                self.cisco_product
-                    .as_deref()
-                    .unwrap_or("CAI-845A-M8"),
-            ),
+            product: Cow::Borrowed(self.cisco_product.as_deref().unwrap_or("CAI-845A-M8")),
             gpu_profile: self.resolved_cisco_gpu_profile(),
             product_serial_number: Cow::Borrowed(&self.serial),
             nics,

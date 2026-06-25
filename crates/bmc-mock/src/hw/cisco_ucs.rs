@@ -64,10 +64,7 @@ impl CiscoUcs<'_> {
                 let eth_id = format!("NIC.P{slot_number}-1");
                 let resource = redfish::ethernet_interface::system_resource(system_id, &eth_id);
                 redfish::ethernet_interface::builder(&resource)
-                    .description(&format!(
-                        "Nvidia Network Adapter - {}",
-                        nic.mac_address
-                    ))
+                    .description(&format!("Nvidia Network Adapter - {}", nic.mac_address))
                     .mac_address(nic.mac_address)
                     .interface_enabled(true)
                     .build()

@@ -286,11 +286,7 @@ pub(crate) fn hw_type<B: Bmc>(
             "NVIDIA" if root.product() == Some(Product::new("P3809")) => Some(hw::HwType::NvSwitch),
             _ => None,
         })
-        .or_else(|| {
-            explored_chassis
-                .is_cisco()
-                .then_some(hw::HwType::Cisco)
-        })
+        .or_else(|| explored_chassis.is_cisco().then_some(hw::HwType::Cisco))
         .or_else(|| {
             explored_chassis
                 .is_liteon_powershelf()
