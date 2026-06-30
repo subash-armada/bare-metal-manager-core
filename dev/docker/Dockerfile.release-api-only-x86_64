@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+#
+# Fast iteration: rebuild only carbide-api (+ admin-cli) and layer onto an
+# existing nvmetal-carbide image. Skips boot-artifacts, machine-validation,
+# clippy, and the full release-container pipeline (~5–15 min vs ~1 hr).
+#
+# Example:
+#   BASE_IMAGE=subashaarna/nvmetal-carbide:june25 \
+#   TAG=june25-cisco-fix \
+#   dev/bin/build-nvmetal-carbide-api-only.sh --push
+
+ARG CONTAINER_BUILD_X86_64=nico-buildcontainer-x86_64
+ARG BASE_IMAGE=subashaarna/nvmetal-carbide:june25
+ARG VERSION=local
+
+FROM ${CONTAINER_BUILD_X86_64} AS builder
+ARG VERSION
+ENV VERSION=${VERSION}
+WORKDIR /carbide
+COPY . ./
+
+RUN --mount=type=cache,id=sccache-x86_64-api-only,target=/sccache \
+  export SCCACHE_DIR=/sccache && \
+  export RUSTC_WRAPPER=sccache && \
+  cargo build --release \
+    -p carbide-api --bin carbide-api \
+    -p carbide-admin-cli --bin carbide-admin-cli \
+    --locked
+
+FROM ${BASE_IMAGE}
+COPY --from=builder /carbide/target/release/carbide-api /opt/carbide/carbide-api
+COPY --from=builder /carbide/target/release/carbide-admin-cli /opt/carbide/carbide-admin-cli
+RUN ln -sf /opt/carbide/carbide-admin-cli /opt/carbide/forge-admin-cli

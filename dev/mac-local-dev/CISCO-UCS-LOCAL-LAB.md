@@ -41,7 +41,7 @@ MAT simulates:
 |------|--------|
 | `crates/bmc-mock/src/hw/cisco_ucs.rs` | New parameterized mock: product string (`CAI-845A-M8`, `CAI-885A-M8`), GPU profile (`mgx_pcie`, `hgx_sxm`), boot options, discovery info |
 | `crates/bmc-mock/src/machine_info.rs` | `HostHardwareType::CiscoUcs` wired to `CiscoUcs` mock; vendor `BmcVendor::Cisco` |
-| `crates/bmc-mock/src/redfish/oem/mod.rs` | Cisco/AMI use `/Bios/SD` for pending settings (not `/Settings`) |
+| `crates/bmc-mock/src/redfish/oem/mod.rs` | AMI uses `/Bios/SD`; Cisco UCS uses `/Bios/Settings` for BIOS and `/Systems/{id}/SD` for boot order |
 | `crates/bmc-mock/src/redfish/computer_system.rs` | `PATCH Systems/{id}` boot-order returns **204 No Content** (libredfish expects empty body, not `{}`) |
 
 Replaces the old hard-coded `cisco_ucs_c845a_m8` profile with a single
@@ -52,7 +52,8 @@ parameterized implementation usable for multiple SKUs.
 | File | Change |
 |------|--------|
 | `vendor/libredfish/src/cisco.rs` | Cisco-specific BIOS attrs, serial-console attrs, automatic-retry boot detection |
-| `vendor/libredfish/src/ami.rs` | `is_cisco()` uses **manufacturer only** (`RedfishVendor::Cisco`); Cisco branches for BIOS `/SD`, infinite boot via `Boot.AutomaticRetryConfig` (not AMI `EndlessBoot`) |
+| `vendor/libredfish/src/ami.rs` | `is_cisco()` uses **manufacturer only** (`RedfishVendor::Cisco`); Cisco branches for BIOS `/Settings` (not AMI `/SD`), infinite boot via `Boot.AutomaticRetryConfig` only (C845A rejects `AutomaticRetryAttempts`) |
+| `vendor/libredfish/src/cisco.rs` | `is_automatic_retry_boot_enabled()` checks `RetryAttempts` only — C845A does not expose or accept `AutomaticRetryAttempts` |
 
 ### 3. BMC explorer tests
 

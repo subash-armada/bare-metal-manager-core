@@ -421,14 +421,14 @@ impl RedfishHttpClient {
         ) = self
             .req(Method::PATCH, api, Some(data), Some(timeout), None, headers)
             .await?;
-        match status_code {
-            StatusCode::NO_CONTENT => Ok(()),
-            _ => Err(RedfishError::HTTPErrorCode {
-                url: api.to_string(),
-                status_code,
-                response_body: format!("{:?}", resp_body.unwrap_or_default()),
-            }),
+        if is_patch_success(status_code, &resp_body) {
+            return Ok(());
         }
+        Err(RedfishError::HTTPErrorCode {
+            url: api.to_string(),
+            status_code,
+            response_body: format!("{:?}", resp_body.unwrap_or_default()),
+        })
     }
 
     pub async fn delete(&self, api: &str) -> Result<StatusCode, RedfishError> {
@@ -869,6 +869,51 @@ fn redact_sensitive_fields(body: &str) -> Cow<'_, str> {
     re.replace_all(body, r#""$1":"[REDACTED]""#)
 }
 
+/// Returns true when a PATCH response indicates success.
+/// Redfish allows 204 No Content; some AMI/Cisco BMCs return HTTP 200 with a
+/// Redfish Success message envelope (often under an `"error"` key).
+fn is_patch_success(
+    status_code: StatusCode,
+    resp_body: &Option<HashMap<String, serde_json::Value>>,
+) -> bool {
+    if status_code == StatusCode::NO_CONTENT {
+        return true;
+    }
+    if status_code != StatusCode::OK {
+        return false;
+    }
+    let Some(body) = resp_body else {
+        return true;
+    };
+    if body.is_empty() {
+        return true;
+    }
+    if let Some(error) = body.get("error") {
+        return redfish_message_indicates_success(error);
+    }
+    true
+}
+
+fn redfish_message_indicates_success(value: &serde_json::Value) -> bool {
+    if value
+        .get("code")
+        .and_then(|v| v.as_str())
+        .is_some_and(|c| c.ends_with(".Success"))
+    {
+        return true;
+    }
+    value
+        .get("@Message.ExtendedInfo")
+        .and_then(|v| v.as_array())
+        .is_some_and(|msgs| {
+            msgs.iter().any(|m| {
+                m.get("MessageId")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|id| id.ends_with(".Success"))
+            })
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1007,5 +1052,38 @@ mod tests {
             !logged.contains("supersecret"),
             "no part of the secret must appear after truncation"
         );
+    }
+
+    #[test]
+    fn patch_success_accepts_no_content() {
+        assert!(is_patch_success(StatusCode::NO_CONTENT, &None));
+    }
+
+    #[test]
+    fn patch_success_accepts_cisco_success_envelope() {
+        let body: HashMap<String, serde_json::Value> = serde_json::from_value(serde_json::json!({
+            "error": {
+                "@Message.ExtendedInfo": [{
+                    "MessageId": "Base.1.18.1.Success",
+                    "Message": "The request completed successfully."
+                }],
+                "code": "Base.1.18.1.Success",
+                "message": "The request completed successfully."
+            }
+        }))
+        .unwrap();
+        assert!(is_patch_success(StatusCode::OK, &Some(body)));
+    }
+
+    #[test]
+    fn patch_success_rejects_cisco_error_envelope() {
+        let body: HashMap<String, serde_json::Value> = serde_json::from_value(serde_json::json!({
+            "error": {
+                "code": "Base.1.18.1.PropertyUnknown",
+                "message": "unknown property"
+            }
+        }))
+        .unwrap();
+        assert!(!is_patch_success(StatusCode::OK, &Some(body)));
     }
 }

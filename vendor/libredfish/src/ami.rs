@@ -70,17 +70,28 @@ impl Bmc {
         self.s.vendor == Some(RedfishVendor::Cisco)
     }
 
+    /// Pending BIOS settings URL. Generic AMI MegaRAC uses `/Bios/SD`; Cisco UCS
+    /// C845A exposes `@Redfish.Settings` at `/Bios/Settings` instead.
+    fn bios_settings_url(&self) -> String {
+        let suffix = if self.is_cisco() { "Settings" } else { "SD" };
+        format!("Systems/{}/Bios/{}", self.s.system_id(), suffix)
+    }
+
     async fn enable_automatic_retry_boot(&self) -> Result<(), RedfishError> {
         use serde_json::json;
 
         let url = format!("Systems/{}", self.s.system_id());
-        let body = HashMap::from([(
-            "Boot",
+        // C845A firmware rejects AutomaticRetryAttempts (HTTP 500) and does not
+        // expose the property on GET; only AutomaticRetryConfig is supported.
+        let boot = if self.is_cisco() {
+            json!({ "AutomaticRetryConfig": "RetryAttempts" })
+        } else {
             json!({
                 "AutomaticRetryConfig": "RetryAttempts",
                 "AutomaticRetryAttempts": 999
-            }),
-        )]);
+            })
+        };
+        let body = HashMap::from([("Boot", boot)]);
         self.s.client.patch_with_if_match(&url, body).await
     }
 
@@ -405,12 +416,8 @@ impl Redfish for Bmc {
                 if !crate::cisco::is_automatic_retry_boot_enabled(&system.boot) {
                     diffs.push(MachineSetupDiff {
                         key: "AutomaticRetryConfig".to_string(),
-                        expected: "RetryAttempts with attempts > 0".to_string(),
-                        actual: format!(
-                            "{:?}/{}",
-                            system.boot.automatic_retry_config,
-                            system.boot.automatic_retry_attempts.unwrap_or(0)
-                        ),
+                        expected: "RetryAttempts".to_string(),
+                        actual: format!("{:?}", system.boot.automatic_retry_config),
                     });
                 }
             } else {
@@ -447,11 +454,18 @@ impl Redfish for Bmc {
     ) -> crate::RedfishFuture<'a, Result<(), RedfishError>> {
         Box::pin(async move {
             use serde_json::Value;
-            let body = HashMap::from([
+            let mut body = HashMap::from([
                 ("AccountLockoutThreshold", Value::Number(0.into())),
                 ("AccountLockoutDuration", Value::Number(0.into())),
-                ("AccountLockoutCounterResetAfter", Value::Number(0.into())),
             ]);
+            // Cisco UCS C845A AccountService exposes lockout threshold/duration
+            // but rejects AccountLockoutCounterResetAfter with HTTP 400 PropertyUnknown.
+            if !self.is_cisco() {
+                body.insert(
+                    "AccountLockoutCounterResetAfter",
+                    Value::Number(0.into()),
+                );
+            }
             self.s
                 .client
                 .patch_with_if_match("AccountService", body)
@@ -834,7 +848,7 @@ impl Redfish for Bmc {
         values: HashMap<String, serde_json::Value>,
     ) -> crate::RedfishFuture<'a, Result<(), RedfishError>> {
         Box::pin(async move {
-            let url = format!("Systems/{}/Bios/SD", self.s.system_id());
+            let url = self.bios_settings_url();
             let body = HashMap::from([("Attributes", values)]);
             self.s.client.patch_with_if_match(&url, body).await
         })
@@ -844,20 +858,20 @@ impl Redfish for Bmc {
         Box::pin(async move { self.s.factory_reset_bios().await })
     }
 
-    /// AMI uses /Bios/SD for pending settings
+    /// AMI uses /Bios/SD for pending settings (Cisco UCS uses /Bios/Settings).
     fn pending<'a>(
         &'a self,
     ) -> crate::RedfishFuture<'a, Result<HashMap<String, serde_json::Value>, RedfishError>> {
         Box::pin(async move {
-            let url = format!("Systems/{}/Bios/SD", self.s.system_id());
+            let url = self.bios_settings_url();
             self.s.pending_with_url(&url).await
         })
     }
 
-    /// AMI clear_pending - uses /Bios/SD instead of /Bios/Settings
+    /// AMI clear_pending - uses /Bios/SD (Cisco UCS uses /Bios/Settings).
     fn clear_pending<'a>(&'a self) -> crate::RedfishFuture<'a, Result<(), RedfishError>> {
         Box::pin(async move {
-            let pending_url = format!("Systems/{}/Bios/SD", self.s.system_id());
+            let pending_url = self.bios_settings_url();
             let pending_attrs = self.s.pending_attributes(&pending_url).await?;
             let current_attrs = self.s.bios_attributes().await?;
 
@@ -1042,8 +1056,7 @@ impl Redfish for Bmc {
             let (system, all_boot_options) = self.get_system_and_boot_options().await?;
 
             let target = all_boot_options.iter().find(|opt| {
-                let display = opt.display_name.to_uppercase();
-                display.contains("HTTP") && display.contains("IPV4") && display.contains(&mac)
+                boot_option_display_matches_http_ipv4_mac(&opt.display_name, &mac)
             });
 
             let Some(target) = target else {
@@ -1393,15 +1406,11 @@ impl Bmc {
         &self,
         boot_interface_mac: &str,
     ) -> Result<(Option<String>, Option<String>), RedfishError> {
-        let mac = boot_interface_mac.to_uppercase();
         let (system, all_boot_options) = self.get_system_and_boot_options().await?;
 
         let expected_first_boot_option = all_boot_options
             .iter()
-            .find(|opt| {
-                let display = opt.display_name.to_uppercase();
-                display.contains("HTTP") && display.contains("IPV4") && display.contains(&mac)
-            })
+            .find(|opt| boot_option_display_matches_http_ipv4_mac(&opt.display_name, boot_interface_mac))
             .map(|opt| opt.display_name.clone());
 
         let actual_first_boot_option = system.boot.boot_order.first().and_then(|first_ref| {
@@ -1477,6 +1486,18 @@ impl Bmc {
 
         Ok(diffs)
     }
+}
+
+/// Returns true when an AMI UEFI boot-option display name is an HTTP/IPv4 entry for `mac`.
+/// Vendors vary the MAC encoding: Nvidia often uses colon-separated (`AA:BB:CC:DD:EE:FF`)
+/// while Cisco UCS uses a compact `MAC:AABBCCDDEEFF` prefix without separators.
+fn boot_option_display_matches_http_ipv4_mac(display: &str, mac: &str) -> bool {
+    let display = display.to_uppercase();
+    let mac = mac.to_uppercase();
+    let mac_compact = mac.replace(':', "");
+    display.contains("HTTP")
+        && display.contains("IPV4")
+        && (display.contains(&mac) || display.contains(&mac_compact))
 }
 
 /// FirmwareInventory collection prefix for AMI update `Targets` URIs (absolute).
@@ -1703,6 +1724,30 @@ mod tests {
             extract_ami_task_id(Some("/redfish/v1/TaskService/Tasks/7"), "not json"),
             Some("7".to_string())
         );
+    }
+
+    #[test]
+    fn boot_option_display_matches_colonated_mac() {
+        assert!(boot_option_display_matches_http_ipv4_mac(
+            "UEFI: HTTP IPv4 Nvidia Network Adapter - B8:E9:24:17:6D:72 P1",
+            "b8:e9:24:17:6d:72",
+        ));
+    }
+
+    #[test]
+    fn boot_option_display_matches_compact_mac_prefix() {
+        assert!(boot_option_display_matches_http_ipv4_mac(
+            "MAC:303EA74D2B4C UEFI: HTTP IPv4 Cisco(R) Ethernet Network Adapter X710-T2L OCP 3.0",
+            "30:3E:A7:4D:2B:4C",
+        ));
+    }
+
+    #[test]
+    fn boot_option_display_rejects_non_http_option() {
+        assert!(!boot_option_display_matches_http_ipv4_mac(
+            "MAC:303EA74D2B4C UEFI: PXE IPv4 Cisco(R) Ethernet Network Adapter X710-T2L OCP 3.0",
+            "30:3E:A7:4D:2B:4C",
+        ));
     }
 
     #[test]

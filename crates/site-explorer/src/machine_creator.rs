@@ -24,7 +24,7 @@ use forge_secrets::credentials::{
 };
 use librms::RmsApi;
 use model::bmc_info::BmcInfo;
-use model::expected_machine::{ExpectedMachine, ExpectedMachineData};
+use model::expected_machine::{DpuMode, ExpectedMachine, ExpectedMachineData};
 use model::hardware_info::HardwareInfo;
 use model::machine::machine_id::host_id_from_dpu_hardware_info;
 use model::machine::machine_search_config::MachineSearchConfig;
@@ -42,8 +42,24 @@ use sqlx::{PgConnection, PgPool};
 use crate::SiteExplorerConfig;
 use crate::errors::{SiteExplorerError, SiteExplorerResult};
 use crate::explored_endpoint_index::ExploredEndpointIndex;
-use crate::managed_host::ManagedHost;
+use crate::managed_host::{is_endpoint_in_managed_host, ManagedHost};
 use crate::metrics::SiteExplorationMetrics;
+
+/// Cisco UCS zero-DPU hosts (e.g. C845A): BMC Redfish exploration does not surface the host PXE
+/// NIC, and Scout may migrate PredictedHost → Host before site-explorer re-runs. Other zero-DPU
+/// and DPU-backed flows already link host interfaces through their own paths.
+fn is_cisco_no_dpu_host(
+    report: &EndpointExplorationReport,
+    machine_data: Option<&ExpectedMachineData>,
+) -> bool {
+    let no_dpu = machine_data.is_some_and(|d| d.dpu_mode == DpuMode::NoDpu);
+    let cisco_bmc = report
+        .systems
+        .first()
+        .and_then(|s| s.manufacturer.as_ref())
+        .is_some_and(|m| m.to_ascii_lowercase().contains("cisco"));
+    no_dpu && cisco_bmc
+}
 
 pub struct MachineCreator {
     database_connection: PgPool,
@@ -311,6 +327,24 @@ impl MachineCreator {
         report: &mut EndpointExplorationReport,
         machine_data: Option<&ExpectedMachineData>,
     ) -> SiteExplorerResult<Option<MachineId>> {
+        let cisco_no_dpu = is_cisco_no_dpu_host(report, machine_data);
+        let host_bmc_ip = managed_host.explored_host.host_bmc_ip;
+        if cisco_no_dpu && is_endpoint_in_managed_host(host_bmc_ip, &mut *txn).await? {
+            if let Some(existing_machine_id) =
+                db::machine_topology::find_machine_id_by_bmc_ip(&mut *txn, &host_bmc_ip.to_string())
+                    .await?
+            {
+                tracing::info!(
+                    %host_bmc_ip,
+                    %existing_machine_id,
+                    "Cisco zero-DPU host already ingested for BMC IP; linking expected host NICs"
+                );
+                self.link_expected_host_nics_to_machine(txn, &existing_machine_id, machine_data)
+                    .await?;
+            }
+            return Ok(None);
+        }
+
         // If there's already a machine with the same MAC address as this endpoint, return false. We
         // can't rely on matching the machine_id, as it may have migrated to a stable MachineID
         // already.
@@ -374,6 +408,10 @@ impl MachineCreator {
                 predicted_host_macs=?mac_addresses,
                 "Predicted host already exists, with different mac addresses from this one. Potentially multiple machines with same serial number?"
             );
+            if cisco_no_dpu {
+                self.link_expected_host_nics_to_machine(txn, &existing_machine.id, machine_data)
+                    .await?;
+            }
             return Ok(None);
         }
 
@@ -427,7 +465,82 @@ impl MachineCreator {
             }
         }
 
+        if cisco_no_dpu {
+            self.link_expected_host_nics_to_machine(txn, machine_id, machine_data)
+                .await?;
+        }
+
         Ok(Some(*machine_id))
+    }
+
+    /// Links `expected_machine.host_nics` to a Cisco zero-DPU host machine. Exploration reports
+    /// only carry BMC/OOB MACs, so pre-allocated host PXE NICs (from expected-machine static IPs)
+    /// stay orphaned until this runs.
+    async fn link_expected_host_nics_to_machine(
+        &self,
+        txn: &mut PgConnection,
+        machine_id: &MachineId,
+        machine_data: Option<&ExpectedMachineData>,
+    ) -> SiteExplorerResult<()> {
+        let Some(data) = machine_data else {
+            return Ok(());
+        };
+        if data.host_nics.is_empty() {
+            return Ok(());
+        }
+
+        for nic in &data.host_nics {
+            let mac_address = nic.mac_address;
+            let Some(machine_interface) = db::machine_interface::find_by_mac_address(&mut *txn, mac_address)
+                .await?
+                .into_iter()
+                .next()
+            else {
+                tracing::warn!(
+                    %mac_address,
+                    %machine_id,
+                    "Expected host NIC not found in machine_interfaces; skipping link"
+                );
+                continue;
+            };
+
+            match machine_interface.machine_id.as_ref() {
+                Some(existing_id) if existing_id == machine_id => {}
+                Some(existing_id) => {
+                    tracing::warn!(
+                        %mac_address,
+                        %machine_id,
+                        %existing_id,
+                        "Expected host NIC already associated with a different machine; skipping"
+                    );
+                    continue;
+                }
+                None => {
+                    tracing::info!(
+                        %mac_address,
+                        %machine_id,
+                        "Linking expected host NIC to zero-DPU machine"
+                    );
+                    db::machine_interface::associate_interface_with_machine(
+                        &machine_interface.id,
+                        MachineInterfaceAssociation::Machine(*machine_id),
+                        txn,
+                    )
+                    .await?;
+                }
+            }
+
+            if nic.primary == Some(true) {
+                let iface = db::machine_interface::find_by_mac_address(&mut *txn, mac_address)
+                    .await?
+                    .into_iter()
+                    .next()
+                    .expect("host NIC row exists after link");
+                db::machine_interface::set_primary_interface(&iface.id, true, txn).await?;
+            }
+        }
+
+        Ok(())
     }
 
     // create_dpu does everything needed to create a DPU as part of a newly discovered managed host.

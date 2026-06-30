@@ -55,9 +55,15 @@ impl BmcVendor {
             BmcVendor::Nvidia(_) | BmcVendor::Dell | BmcVendor::Wiwynn | BmcVendor::LiteOn => {
                 format!("{}/Settings", resource.odata_id)
             }
-            // AMI MegaRAC (including Cisco UCS) uses /SD for pending BIOS/settings.
-            BmcVendor::Ami | BmcVendor::Cisco => {
-                format!("{}/SD", resource.odata_id)
+            // AMI MegaRAC uses /SD for pending settings.
+            BmcVendor::Ami => format!("{}/SD", resource.odata_id),
+            // Cisco UCS C845A: system boot order via /SD, BIOS attrs via /Settings.
+            BmcVendor::Cisco => {
+                if resource.odata_id.ends_with("/Bios") {
+                    format!("{}/Settings", resource.odata_id)
+                } else {
+                    format!("{}/SD", resource.odata_id)
+                }
             }
         }
     }

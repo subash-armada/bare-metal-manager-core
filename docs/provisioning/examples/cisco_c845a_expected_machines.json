@@ -1,19 +1,30 @@
-[
-  {
-    "bmc_mac_address": "10:57:25:2c:41:2c",
-    "chassis_serial_number": "WVT301001H9",
-    "bmc_username": "admin",
-    "bmc_password": "<current-password>",
-    "dpu_mode": "no_dpu",
-    "host_nics": [
-      {
-        "mac_address": "<host-pxe-mac>",
-        "nic_type": "onboard",
-        "primary": true
+{
+  "expected_machines": [
+    {
+      "bmc_mac_address": "10:57:25:2c:41:2c",
+      "bmc_username": "admin",
+      "bmc_password": "<current-password>",
+      "chassis_serial_number": "WVT301001H9",
+      "bmc_ip_address": "198.18.199.103",
+      "dpu_mode": "NoDpu",
+      "metadata": {
+        "name": "c845a-gpu-node",
+        "description": "Cisco UCS C845A M8 zero-DPU bridge lab (serial WVT301001H9). BMC password: see dev/CISCO-UCS-BRIDGE-LAB-ISSUES.md",
+        "labels": []
+      },
+      "host_nics": [
+        {
+          "mac_address": "30:3e:a7:4d:2b:4c",
+          "nic_type": "onboard",
+          "primary": true,
+          "fixed_ip": "10.20.50.21",
+          "fixed_mask": "255.255.255.0",
+          "fixed_gateway": "10.20.50.13"
+        }
+      ],
+      "host_lifecycle_profile": {
+        "disable_lockdown": true
       }
-    ],
-    "host_lifecycle_profile": {
-      "disable_lockdown": true
     }
-  }
-]
+  ]
+}

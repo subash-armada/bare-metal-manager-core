@@ -30,10 +30,11 @@ use serde_json::Value;
 
 use crate::model::boot::{AutomaticRetryConfig, Boot};
 
-/// Cisco UCS uses Redfish `Boot.AutomaticRetryConfig`, not AMI `EndlessBoot` BIOS attr.
+/// Cisco UCS C845A exposes `Boot.AutomaticRetryConfig` only (no
+/// `AutomaticRetryAttempts` in GET or PATCH). Infinite boot is enabled when
+/// config is `RetryAttempts`.
 pub fn is_automatic_retry_boot_enabled(boot: &Boot) -> bool {
     boot.automatic_retry_config == Some(AutomaticRetryConfig::RetryAttempts)
-        && boot.automatic_retry_attempts.unwrap_or(0) > 0
 }
 
 /// BIOS attributes applied during machine setup on Cisco UCS platforms.
@@ -83,6 +84,16 @@ mod tests {
     fn automatic_retry_boot_enabled_when_configured() {
         let boot = Boot {
             automatic_retry_config: Some(AutomaticRetryConfig::RetryAttempts),
+            automatic_retry_attempts: None,
+            ..Default::default()
+        };
+        assert!(is_automatic_retry_boot_enabled(&boot));
+    }
+
+    #[test]
+    fn automatic_retry_boot_enabled_without_attempts_field() {
+        let boot = Boot {
+            automatic_retry_config: Some(AutomaticRetryConfig::RetryAttempts),
             automatic_retry_attempts: Some(999),
             ..Default::default()
         };
@@ -90,17 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn automatic_retry_boot_disabled_without_attempts() {
-        let boot = Boot {
-            automatic_retry_config: Some(AutomaticRetryConfig::RetryAttempts),
-            automatic_retry_attempts: Some(0),
-            ..Default::default()
-        };
-        assert!(!is_automatic_retry_boot_enabled(&boot));
-    }
-
-    #[test]
-    fn automatic_retry_boot_disabled_when_not_retry_attempts_mode() {
+    fn automatic_retry_boot_disabled_without_retry_attempts_mode() {
         let boot = Boot {
             automatic_retry_config: Some(AutomaticRetryConfig::Disabled),
             automatic_retry_attempts: Some(999),
